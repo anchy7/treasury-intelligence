@@ -43,7 +43,10 @@ jobs:
       env:
         GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
         GMAIL_TOKEN: ${{ secrets.GMAIL_TOKEN }}
-    
+        
+    - name: Run lead scoring
+      run: python lead_scoring.py
+      
     - name: Commit and push results
       run: |
         git config --local user.email "action@github.com"
