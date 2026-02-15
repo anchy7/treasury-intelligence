@@ -407,18 +407,26 @@ with tab4:
     
     with col1:
         st.subheader("🔧 Technology Trends")
-        
-        tech_data = jobs_df[jobs_df['technologies'] != '']['technologies'].value_counts().head(8)
-        
+
+        tech_series = jobs_df.loc[
+            jobs_df["technologies"].fillna("").astype(str).str.strip().ne(""),
+            "technologies"
+        ].value_counts().head(8)
+
+        tech_df = tech_series.reset_index()
+        tech_df.columns = ["Technology", "Mentions"]
+
         fig = px.bar(
-            x=tech_data.values,
-            y=tech_data.index,
-            orientation='h',
-            color=tech_data.values,
-            color_continuous_scale='Blues'
+            tech_df,
+            x="Mentions",
+            y="Technology",
+            orientation="h",
+            color="Mentions",
+            color_continuous_scale="Blues",
         )
         fig.update_layout(showlegend=False, height=400)
         st.plotly_chart(fig, use_container_width=True)
+
     
     with col2:
         st.subheader("📊 Prospect Generation Rate")
