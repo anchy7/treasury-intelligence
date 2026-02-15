@@ -1,0 +1,48 @@
+name: Daily Job Scraper
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 6 AM UTC daily
+  workflow_dispatch:  # Manual trigger button
+
+jobs:
+  scrape-jobs:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Chrome
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget unzip
+        wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+        sudo apt-get install -y ./google-chrome-stable_current_amd64.deb
+    
+    - name: Install Python dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run web scraper (StepStone + Jobs.ch)
+      run: python scraper.py
+    
+    - name: Run email parser (LinkedIn alerts)
+      run: python email_parser.py
+      env:
+        GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
+        GMAIL_TOKEN: ${{ secrets.GMAIL_TOKEN }}
+    
+    - name: Commit and push results
+      run: |
+        git config --local anchy7.email "action@github.com"
+        git config --local anchy7.name "GitHub Action"
+        git add treasury_jobs.csv
+        git diff --quiet && git diff --staged --quiet || git commit -m "Update jobs data - $(date +'%Y-%m-%d')"
+        git push
