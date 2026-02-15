@@ -4,9 +4,9 @@ Runs daily via GitHub Actions
 """
 
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
+#from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+#from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import pandas as pd
 from datetime import datetime
@@ -26,8 +26,9 @@ class TreasuryWebScraper:
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        #service = Service(ChromeDriverManager().install())
+        #self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        self.driver = webdriver.Chrome(options=chrome_options)
         self.jobs = []
         print("✅ Web scraper ready\n")
     
