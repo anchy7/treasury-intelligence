@@ -1,21 +1,43 @@
 """
 Web Scraper for StepStone.de and Jobs.ch
 Runs daily via GitHub Actions (or locally)
+
+Key improvements vs. your earlier version:
+- StepStone: uses stable query parameters (what/where) + URL encoding
+- Jobs.ch: extracts from job links + tries multiple company selectors
+- Jobs.ch fallback: opens a few detail pages to fetch company/location if still Unknown
+- Uses Selenium Manager (no webdriver-manager)
+- Dedupes by URL (most reliable)
 """
+
+from __future__ import annotations
+
+import os
+import re
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+from urllib.parse import quote_plus
+
+import pandas as pd
+from bs4 import BeautifulSoup
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
-from bs4 import BeautifulSoup
-import pandas as pd
-from datetime import datetime
-from urllib.parse import quote_plus
-import time
-import re
-import os
+
+@dataclass
+class Job:
+    date_scraped: str
+    source: str
+    company: str
+    title: str
+    location: str
+    url: str
+    technologies: str = ""
 
 
 class TreasuryWebScraper:
@@ -23,20 +45,19 @@ class TreasuryWebScraper:
         print("🚀 Initializing web scraper...")
 
         chrome_options = Options()
-        # Use the newer headless mode if available (works well on Linux runners)
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
 
-        # A realistic UA (doesn't need to be Windows-specific)
+        # A realistic modern UA (keep it consistent across runs)
         chrome_options.add_argument(
             "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
         )
 
-        # Selenium Manager (no webdriver-manager)
+        # Selenium Manager resolves driver/browser
         self.driver = webdriver.Chrome(options=chrome_options)
         self.wait = WebDriverWait(self.driver, 15)
 
@@ -63,7 +84,7 @@ class TreasuryWebScraper:
             print(f"\n🔍 Searching: '{keyword}' in {location}")
 
             try:
-                # Use stable query params + URL encoding (important for München)
+                # Stable params
                 url = (
                     "https://www.stepstone.de/jobs?"
                     f"what={quote_plus(keyword)}&where={quote_plus(location)}"
@@ -71,22 +92,9 @@ class TreasuryWebScraper:
                 print(f"   URL: {url}")
 
                 self.driver.get(url)
-
-                # Wait for the page to load meaningful HTML
-                self.wait.until(lambda d: len(d.page_source) > 5000)
-
-                # Best effort: wait for job cards (may not appear if blocked/consent)
-                try:
-                    self.wait.until(
-                        EC.presence_of_element_located(
-                            (By.CSS_SELECTOR, "article[data-at='job-item']")
-                        )
-                    )
-                except Exception:
-                    pass
+                self._wait_for_html()
 
                 soup = BeautifulSoup(self.driver.page_source, "html.parser")
-
                 job_cards = soup.select("article[data-at='job-item']")
                 if not job_cards:
                     job_cards = soup.find_all("article", class_=re.compile("job", re.IGNORECASE))
@@ -94,7 +102,7 @@ class TreasuryWebScraper:
                 print(f"   Found {len(job_cards)} job cards")
 
                 added = 0
-                for card in job_cards[:20]:  # a bit more, then we cap prints
+                for card in job_cards[:20]:
                     try:
                         title_elem = (
                             card.select_one('[data-at="job-item-title"]')
@@ -114,9 +122,7 @@ class TreasuryWebScraper:
                             card.select_one('[data-at="job-item-location"]')
                             or card.find("span", class_=re.compile("location", re.IGNORECASE))
                         )
-                        job_location = (
-                            location_elem.get_text(strip=True) if location_elem else location
-                        )
+                        job_location = location_elem.get_text(strip=True) if location_elem else location
 
                         link_elem = card.find("a", href=True)
                         job_url = ""
@@ -124,7 +130,6 @@ class TreasuryWebScraper:
                             href = link_elem["href"]
                             job_url = href if href.startswith("http") else f"https://www.stepstone.de{href}"
 
-                        # Only add if minimum data exists
                         if title != "Unknown" and company != "Unknown" and job_url:
                             self.jobs.append(
                                 {
@@ -141,7 +146,7 @@ class TreasuryWebScraper:
                                 print(f"   ✅ [{added}] {company} - {title[:55]}")
 
                     except Exception as e:
-                        print(f"   ⚠️  Error parsing job card: {str(e)[:100]}")
+                        print(f"   ⚠️  Error parsing job card: {str(e)[:120]}")
                         continue
 
                 time.sleep(1)
@@ -156,7 +161,19 @@ class TreasuryWebScraper:
     # JOBS.CH
     # ---------------------------
     def scrape_jobs_ch(self):
-        """Scrape Jobs.ch for Swiss treasury jobs (link-based extraction)"""
+        """
+        Scrape Jobs.ch for Swiss treasury jobs.
+
+        Why company was "Unknown" before:
+        - list pages often don't contain "at Company" text
+        - company sits in specific spans/divs and your regex didn't hit
+        - sometimes company is only reliable on detail pages
+
+        This version:
+        - extracts job URLs from list page
+        - tries multiple selectors for company/location in the list item
+        - falls back to opening a limited number of detail pages to fill Unknowns
+        """
         print("=" * 60)
         print("📊 SCRAPING JOBS.CH (Switzerland)")
         print("=" * 60)
@@ -171,101 +188,69 @@ class TreasuryWebScraper:
                 print(f"   URL: {url}")
 
                 self.driver.get(url)
-                self.wait.until(lambda d: len(d.page_source) > 5000)
+                self._wait_for_html()
 
                 soup = BeautifulSoup(self.driver.page_source, "html.parser")
 
-                # Jobs.ch patterns can change; we capture common vacancy links
+                # Link patterns tend to be more stable than card markup
                 links = soup.find_all(
                     "a",
                     href=re.compile(r"(/en/vacancies/|/vacancies/|/en/jobs/|/jobs/)", re.IGNORECASE),
                 )
-
                 print(f"   Found {len(links)} job links")
 
                 added = 0
-                seen = set()
+                seen_urls: set[str] = set()
 
+                # Collect candidates from the list page first
+                candidates: list[dict] = []
                 for link in links:
-                    try:
-                        href = link.get("href", "")
-                        if not href:
-                            continue
-
-                        # Only keep likely job detail links; avoid nav/footer noise
-                        if not re.search(r"(vacanc|job)", href, re.IGNORECASE):
-                            continue
-
-                        title = link.get_text(strip=True)
-                        if not title or len(title) < 6:
-                            continue
-
-                        job_url = href if href.startswith("http") else f"https://www.jobs.ch{href}"
-
-                        key = ("Jobs.ch", job_url)
-                        if key in seen:
-                            continue
-                        seen.add(key)
-
-                        parent = link.find_parent(["article", "div", "li", "section"]) or link.parent
-                        text = parent.get_text(" ", strip=True) if parent else ""
-
-                        # Best-effort company extraction
-                        company = "Unknown"
-                        m = re.search(r"\bat\s+(.+?)(?:\s+in\s+|•|\||$)", text, re.IGNORECASE)
-                        if m:
-                            company = self._clean_company(m.group(1).strip())
-
-                        # Best-effort location extraction
-                        job_location = "Switzerland"
-                        loc_elem = (
-                            parent.find("span", class_=re.compile("location", re.IGNORECASE))
-                            if parent
-                            else None
-                        )
-                        if loc_elem:
-                            job_location = loc_elem.get_text(strip=True)
-                        else:
-                            # fallback city guess
-                            swiss_cities = [
-                                "Zurich",
-                                "Zürich",
-                                "Basel",
-                                "Geneva",
-                                "Genève",
-                                "Lausanne",
-                                "Bern",
-                                "Zug",
-                                "Lucerne",
-                                "Luzern",
-                            ]
-                            for city in swiss_cities:
-                                if city.lower() in text.lower():
-                                    job_location = city
-                                    break
-
-                        self.jobs.append(
-                            {
-                                "date_scraped": datetime.now().strftime("%Y-%m-%d"),
-                                "source": "Jobs.ch",
-                                "company": company,
-                                "title": title,
-                                "location": job_location,
-                                "url": job_url,
-                            }
-                        )
-
-                        added += 1
-                        if added <= 15:
-                            print(f"   ✅ [{added}] {company} - {title[:55]}")
-
-                        # Keep it reasonable per keyword
-                        if added >= 25:
-                            break
-
-                    except Exception as e:
-                        print(f"   ⚠️  Error parsing link: {str(e)[:100]}")
+                    href = (link.get("href") or "").strip()
+                    if not href:
                         continue
+
+                    # Basic noise filter: ignore obvious non-job links
+                    if any(x in href.lower() for x in ["privacy", "terms", "login", "register"]):
+                        continue
+
+                    job_url = href if href.startswith("http") else f"https://www.jobs.ch{href}"
+
+                    if job_url in seen_urls:
+                        continue
+                    seen_urls.add(job_url)
+
+                    title = link.get_text(strip=True)
+                    if not title or len(title) < 6:
+                        continue
+
+                    parent = link.find_parent(["article", "li", "div", "section"]) or link.parent
+                    parent_soup = parent if parent else link
+
+                    company = self._extract_company_jobs_ch(parent_soup)
+                    job_location = self._extract_location_jobs_ch(parent_soup)
+
+                    candidates.append(
+                        {
+                            "date_scraped": datetime.now().strftime("%Y-%m-%d"),
+                            "source": "Jobs.ch",
+                            "company": company,
+                            "title": title,
+                            "location": job_location,
+                            "url": job_url,
+                        }
+                    )
+
+                    if len(candidates) >= 35:
+                        break
+
+                # Fallback: open detail pages for missing company/location (cap to keep runtime OK)
+                candidates = self._enrich_jobs_ch_from_detail_pages(candidates, max_details=12)
+
+                for c in candidates:
+                    self.jobs.append(c)
+                    added += 1
+                    if added <= 15:
+                        print(f"   ✅ [{added}] {c['company']} - {c['title'][:55]}")
 
                 print(f"   Added {added} Jobs.ch jobs")
                 time.sleep(1)
@@ -277,20 +262,183 @@ class TreasuryWebScraper:
         print(f"\n✅ Jobs.ch Total: {jobsch_count} jobs\n")
 
     # ---------------------------
-    # HELPERS
+    # JOBS.CH helpers
     # ---------------------------
-    def _clean_company(self, company: str) -> str:
-        """Clean and normalize company names"""
+    def _extract_company_jobs_ch(self, node) -> str:
+        """
+        Try many likely selectors/attributes for company on Jobs.ch list cards.
+        If none hit, return "Unknown".
+        """
+        # 1) Try attribute-driven elements (data-cy is common on modern sites)
+        selectors = [
+            "[data-cy*=company]",
+            "[data-testid*=company]",
+            "[class*=company]",
+            "span[class*=Company]",
+            "div[class*=Company]",
+        ]
+        for sel in selectors:
+            el = node.select_one(sel) if hasattr(node, "select_one") else None
+            if el:
+                txt = el.get_text(" ", strip=True)
+                txt = self._clean_company(txt)
+                if txt and txt.lower() != "unknown":
+                    return txt
+
+        # 2) Try common tag/class regex
+        if hasattr(node, "find"):
+            el = node.find(["span", "div"], class_=re.compile(r"company|employer|firm", re.IGNORECASE))
+            if el:
+                txt = self._clean_company(el.get_text(" ", strip=True))
+                if txt and txt.lower() != "unknown":
+                    return txt
+
+        # 3) Fallback regex on surrounding text
+        text = node.get_text(" ", strip=True) if hasattr(node, "get_text") else ""
+        # Sometimes displayed like: "CompanyName • Zurich"
+        m = re.search(r"^(.+?)\s*[•|]\s*(Zurich|Zürich|Basel|Bern|Geneva|Genève|Lausanne|Zug|Luzern|Lucerne)\b", text)
+        if m:
+            return self._clean_company(m.group(1).strip())
+
+        # Sometimes contains labels like "Company: X"
+        m = re.search(r"(?:Company|Firma|Unternehmen)\s*[:\-]\s*(.+?)(?:\s{2,}|•|\||$)", text, re.IGNORECASE)
+        if m:
+            return self._clean_company(m.group(1).strip())
+
+        return "Unknown"
+
+    def _extract_location_jobs_ch(self, node) -> str:
+        """Best-effort location extraction from list card text."""
+        # 1) Try selector
+        selectors = [
+            "[data-cy*=location]",
+            "[data-testid*=location]",
+            "[class*=location]",
+        ]
+        for sel in selectors:
+            el = node.select_one(sel) if hasattr(node, "select_one") else None
+            if el:
+                txt = el.get_text(" ", strip=True)
+                if txt:
+                    return txt
+
+        # 2) Regex city guess
+        text = node.get_text(" ", strip=True) if hasattr(node, "get_text") else ""
+        swiss_cities = [
+            "Zürich", "Zurich", "Basel", "Bern", "Genève", "Geneva", "Lausanne",
+            "Zug", "Luzern", "Lucerne", "Winterthur", "St. Gallen", "St Gallen",
+        ]
+        for city in swiss_cities:
+            if city.lower() in text.lower():
+                return city
+
+        return "Switzerland"
+
+    def _enrich_jobs_ch_from_detail_pages(self, candidates: list[dict], max_details: int = 10) -> list[dict]:
+        """
+        For candidates with company/location Unknown, open the job detail page and try to extract.
+        Keeps the run time under control by limiting detail page fetches.
+        """
+        to_enrich = [c for c in candidates if (c.get("company") == "Unknown" or c.get("location") in ("Switzerland", "", None))]
+        if not to_enrich:
+            return candidates
+
+        # Only enrich a limited number (keep daily Actions quick)
+        to_enrich = to_enrich[:max_details]
+
+        for c in to_enrich:
+            try:
+                self.driver.get(c["url"])
+                self._wait_for_html()
+
+                soup = BeautifulSoup(self.driver.page_source, "html.parser")
+
+                # Common patterns on detail pages:
+                # - Company in header area
+                # - Location near title
+                # We'll attempt broad but safe extraction.
+                title_text = self._safe_text(soup.select_one("h1")) or c["title"]
+
+                # Company attempts
+                company = c["company"]
+                company_candidates = [
+                    soup.select_one("[data-cy*=company]"),
+                    soup.select_one("[data-testid*=company]"),
+                    soup.select_one("[class*=company]"),
+                    soup.find(["span", "div"], class_=re.compile(r"company|employer|firm", re.IGNORECASE)),
+                ]
+                for el in company_candidates:
+                    txt = self._safe_text(el)
+                    txt = self._clean_company(txt)
+                    if txt and txt.lower() != "unknown" and len(txt) > 1:
+                        company = txt
+                        break
+
+                # Location attempts
+                location = c["location"]
+                loc_candidates = [
+                    soup.select_one("[data-cy*=location]"),
+                    soup.select_one("[data-testid*=location]"),
+                    soup.select_one("[class*=location]"),
+                    soup.find(["span", "div"], class_=re.compile(r"location|ort|place", re.IGNORECASE)),
+                ]
+                for el in loc_candidates:
+                    txt = self._safe_text(el)
+                    if txt and len(txt) > 1:
+                        location = txt
+                        break
+
+                c["title"] = title_text
+                c["company"] = company
+                c["location"] = location if location else c["location"]
+
+                time.sleep(0.5)
+
+            except Exception:
+                # Don't fail the whole run because one detail page differs
+                continue
+
+        return candidates
+
+    @staticmethod
+    def _safe_text(el) -> str:
+        if not el:
+            return ""
+        try:
+            return el.get_text(" ", strip=True)
+        except Exception:
+            return ""
+
+    # ---------------------------
+    # GENERAL helpers
+    # ---------------------------
+    def _wait_for_html(self):
+        # Wait until the HTML is non-trivial (works across many sites)
+        self.wait.until(lambda d: len(d.page_source) > 5000)
+
+    @staticmethod
+    def _clean_company(company: str) -> str:
         company = re.sub(r"\s+", " ", (company or "")).strip()
+
+        # Remove common suffixes
         company = re.sub(
-            r"\s+(GmbH|AG|SE|KGaA|Ltd|Inc|Corp|SA)\.?\s*$", "", company, flags=re.IGNORECASE
+            r"\s+(GmbH|AG|SE|KGaA|Ltd|Inc|Corp|SA)\.?\s*$",
+            "",
+            company,
+            flags=re.IGNORECASE,
         )
+
+        # Remove bracketed notes
         company = re.sub(r"\s*\(.*?\)\s*", "", company)
+
+        # Remove "hiring now" style tails
         company = re.sub(r"\s*(hiring now|we\'re hiring).*", "", company, flags=re.IGNORECASE)
+
         return company.strip() if company else "Unknown"
 
-    def detect_technologies(self, title: str) -> list[str]:
-        tech = []
+    @staticmethod
+    def detect_technologies(title: str) -> list[str]:
+        tech: list[str] = []
         text = (title or "").lower()
 
         if re.search(r"s[/]?4\s?hana|s4hana", text):
@@ -309,7 +457,6 @@ class TreasuryWebScraper:
         return tech
 
     def save_to_csv(self, filename: str = "treasury_jobs.csv"):
-        """Save scraped jobs to CSV (merge + dedupe)."""
         print("=" * 60)
         print("💾 SAVING DATA")
         print("=" * 60)
@@ -323,7 +470,7 @@ class TreasuryWebScraper:
         print("\n🔍 Detecting technologies...")
         df["technologies"] = df["title"].apply(lambda x: ", ".join(self.detect_technologies(x)))
 
-        # Make sure url exists; it's our best unique key
+        # Best unique key is the URL
         if "url" not in df.columns:
             df["url"] = ""
 
@@ -335,11 +482,10 @@ class TreasuryWebScraper:
             combined_df = pd.concat([existing_df, df], ignore_index=True)
 
             before_count = len(combined_df)
-            # Dedupe by URL (most reliable across sources)
             combined_df.drop_duplicates(subset=["url"], keep="last", inplace=True)
             after_count = len(combined_df)
-
             removed = before_count - after_count
+
             combined_df.to_csv(filename, index=False)
 
             print(f"\n📊 Statistics:")
@@ -386,7 +532,6 @@ def main():
     except Exception as e:
         print(f"\n❌ Fatal error: {e}")
         import traceback
-
         traceback.print_exc()
 
     finally:
