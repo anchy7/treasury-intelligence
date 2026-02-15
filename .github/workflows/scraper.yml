@@ -29,6 +29,11 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install -r requirements.txt
+        
+    - name: Remove preinstalled chromedriver
+      run: |
+        sudo rm -f /usr/bin/chromedriver || true
+        which chromedriver || true
     
     - name: Run web scraper (StepStone + Jobs.ch)
       run: python scraper.py
