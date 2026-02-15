@@ -8,7 +8,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-import json
 
 st.set_page_config(
     page_title="Treasury Sales Intelligence",
@@ -56,7 +55,7 @@ st.markdown("""
 def load_data():
     """Load prospects and jobs data"""
     # REPLACE with your GitHub username
-    base_url = "https://raw.githubusercontent.com/anchy7/treasury-intelligence/main/"
+    base_url = "https://raw.githubusercontent.com/YOUR-USERNAME/treasury-intelligence/main/"
     
     try:
         prospects = pd.read_csv(base_url + "prospects.csv")
@@ -64,6 +63,15 @@ def load_data():
         jobs['date_scraped'] = pd.to_datetime(jobs['date_scraped'])
         prospects['first_seen'] = pd.to_datetime(prospects['first_seen'])
         prospects['last_activity'] = pd.to_datetime(prospects['last_activity'])
+        
+        # Handle all_signals column - split into list if present
+        if 'all_signals' in prospects.columns:
+            prospects['signals_list'] = prospects['all_signals'].fillna('').apply(
+                lambda x: [s.strip() for s in x.split('|') if s.strip()]
+            )
+        else:
+            prospects['signals_list'] = prospects['primary_signal'].apply(lambda x: [x] if x != 'None' else [])
+        
         return prospects, jobs
     except Exception as e:
         st.error(f"Error loading data: {e}")
@@ -100,27 +108,9 @@ st.sidebar.metric("🔥 Hot Leads (Tier 1)", tier1_count)
 st.sidebar.metric("🌡️ Warm Leads (Tier 2)", tier2_count)
 st.sidebar.metric("📋 Qualified (Tier 3)", tier3_count)
 
-# Calculate total pipeline value
-def parse_value(value_str):
-    """Parse project value string like €2-4M"""
-    if pd.isna(value_str) or value_str == '€0':
-        return 0
-    
-    import re
-    matches = re.findall(r'(\d+(?:\.\d+)?)(K|M)', str(value_str))
-    if matches:
-        # Take average of range
-        values = []
-        for val, unit in matches:
-            mult = 1000 if unit == 'K' else 1000000
-            values.append(float(val) * mult)
-        return sum(values) / len(values) if values else 0
-    return 0
-
-prospects_df['value_numeric'] = prospects_df['project_value'].apply(parse_value)
-total_pipeline = prospects_df['value_numeric'].sum()
-
-st.sidebar.metric("💰 Total Pipeline", f"€{total_pipeline/1000000:.1f}M")
+# Total signals detected
+total_signals = prospects_df['signal_count'].sum()
+st.sidebar.metric("🎯 Total Signals", int(total_signals))
 
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"*Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*")
@@ -161,14 +151,20 @@ with tab1:
         st.info("No Tier 1 hot leads at the moment. Check Tier 2 warm leads.")
     else:
         for idx, prospect in hot_leads.iterrows():
+            # Display signals badges
+            signals_html = ""
+            if prospect['signal_count'] > 0 and 'signals_list' in prospect:
+                for signal in prospect['signals_list'][:5]:  # Show max 5
+                    signals_html += f'<span class="signal-badge">{signal}</span> '
+            
             st.markdown(f"""
                 <div class="hot-lead">
                 <h3>🔥 {prospect['company']}</h3>
                 <p><strong>Transformation Score: {prospect['score']}/100</strong> | {prospect['action']}</p>
                 <p>📊 Activity: <strong>{prospect['jobs_last_30_days']} jobs</strong> posted in last 30 days (Total: {prospect['total_jobs']})</p>
-                <p>💰 Estimated Project Value: <strong>{prospect['project_value']}</strong></p>
+                <p>🎯 Transformation Signals: <strong>{prospect['signal_count']}</strong> detected</p>
+                <p>{signals_html}</p>
                 <p>📍 Locations: <strong>{prospect['locations']}</strong> sites</p>
-                <p>🎯 Signals: <strong>{prospect['signal_count']}</strong> transformation signals detected</p>
                 <p>⏰ Last Activity: <strong>{prospect['last_activity'].strftime('%Y-%m-%d')}</strong></p>
                 </div>
             """, unsafe_allow_html=True)
@@ -190,8 +186,17 @@ with tab1:
                         st.markdown("---")
                 
                 with col2:
-                    st.markdown("##### Transformation Signals")
-                    st.info(f"**Primary Signal**: {prospect['primary_signal']}")
+                    st.markdown("##### Transformation Signals Detected")
+                    
+                    # Display all signals with details
+                    if 'signals_list' in prospect and len(prospect['signals_list']) > 0:
+                        for i, signal in enumerate(prospect['signals_list'], 1):
+                            st.markdown(f"**{i}. {signal}**")
+                            st.markdown("")
+                    else:
+                        st.info(f"Primary Signal: {prospect['primary_signal']}")
+                    
+                    st.markdown("---")
                     
                     st.markdown("##### Recommended Actions")
                     st.markdown("""
@@ -201,13 +206,15 @@ with tab1:
                     3. Prepare tailored outreach email
                     4. Book discovery call within 48 hours
                     
-                    **Outreach Template**: Use "SAP Transformation" template
+                    **Outreach Approach**: 
+                    Focus on their primary signal and offer relevant case study
                     """)
                     
                     st.markdown("##### Quick Stats")
                     st.metric("Total Jobs", len(company_jobs))
                     st.metric("Hiring Velocity", f"+{prospect['jobs_last_30_days']} in 30 days")
                     st.metric("Geographic Spread", f"{prospect['locations']} locations")
+                    st.metric("Transformation Signals", prospect['signal_count'])
 
 with tab2:
     st.header("All Prospects")
@@ -267,13 +274,13 @@ with tab2:
     
     display_df = prospects_filtered[[
         'company', 'score', 'tier', 'jobs_last_30_days', 
-        'project_value', 'signal_count', 'primary_signal', 'last_activity'
+        'signal_count', 'primary_signal', 'last_activity'
     ]].copy()
     
     display_df['last_activity'] = display_df['last_activity'].dt.strftime('%Y-%m-%d')
     display_df.columns = [
         'Company', 'Score', 'Tier', 'Jobs (30d)', 
-        'Project Value', 'Signals', 'Primary Signal', 'Last Activity'
+        'Signals', 'Primary Signal', 'Last Activity'
     ]
     
     st.dataframe(
@@ -312,7 +319,7 @@ with tab3:
         with col3:
             st.metric("📈 Last 30 Days", prospect['jobs_last_30_days'])
         with col4:
-            st.metric("💰 Project Value", prospect['project_value'])
+            st.metric("🎯 Signals", prospect['signal_count'])
         
         st.markdown("---")
         
@@ -351,8 +358,15 @@ with tab3:
             """, unsafe_allow_html=True)
             
             st.markdown("##### Transformation Signals")
-            st.info(f"**Primary**: {prospect['primary_signal']}")
-            st.info(f"**Total Signals**: {prospect['signal_count']}")
+            
+            # Display all signals
+            if 'signals_list' in prospect and len(prospect['signals_list']) > 0:
+                for i, signal in enumerate(prospect['signals_list'], 1):
+                    st.markdown(f"**{i}. {signal}**")
+            else:
+                st.info(f"Primary Signal: {prospect['primary_signal']}")
+            
+            st.markdown("---")
             
             st.markdown("##### Timeline")
             st.markdown(f"**First Detected**: {prospect['first_seen'].strftime('%Y-%m-%d')}")
@@ -426,34 +440,34 @@ with tab4:
     # Market insights
     st.subheader("💡 Market Insights")
     
-    total_pipeline_value = prospects_df['value_numeric'].sum()
-    avg_project_value = prospects_df[prospects_df['value_numeric'] > 0]['value_numeric'].mean()
+    avg_signals = prospects_df['signal_count'].mean()
+    total_companies_tracked = len(prospects_df)
+    companies_with_multiple_signals = len(prospects_df[prospects_df['signal_count'] >= 2])
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
         st.markdown(f"""
         <div class="metric-card">
-        <h3>€{total_pipeline_value/1000000:.1f}M</h3>
-        <p>Total Pipeline Value</p>
+        <h3>{total_companies_tracked}</h3>
+        <p>Companies Tracked</p>
         </div>
         """, unsafe_allow_html=True)
     
     with col2:
         st.markdown(f"""
         <div class="metric-card">
-        <h3>€{avg_project_value/1000000:.1f}M</h3>
-        <p>Avg Project Value</p>
+        <h3>{avg_signals:.1f}</h3>
+        <p>Avg Signals per Company</p>
         </div>
         """, unsafe_allow_html=True)
     
     with col3:
-        win_rate = 0.33  # Example
-        expected_revenue = total_pipeline_value * win_rate
+        pct_multiple = (companies_with_multiple_signals / total_companies_tracked * 100)
         st.markdown(f"""
         <div class="metric-card">
-        <h3>€{expected_revenue/1000000:.1f}M</h3>
-        <p>Expected Revenue (33% win rate)</p>
+        <h3>{pct_multiple:.0f}%</h3>
+        <p>With Multiple Signals</p>
         </div>
         """, unsafe_allow_html=True)
 
