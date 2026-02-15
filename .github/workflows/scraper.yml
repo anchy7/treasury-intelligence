@@ -41,8 +41,8 @@ jobs:
     
     - name: Commit and push results
       run: |
-        git config --local anchy7.email "action@github.com"
-        git config --local anchy7.name "GitHub Action"
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
         git add treasury_jobs.csv
         git diff --quiet && git diff --staged --quiet || git commit -m "Update jobs data - $(date +'%Y-%m-%d')"
         git push
