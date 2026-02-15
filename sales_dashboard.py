@@ -56,7 +56,7 @@ st.markdown("""
 def load_data():
     """Load prospects and jobs data"""
     # REPLACE with your GitHub username
-    base_url = "https://raw.githubusercontent.com/YOUR-USERNAME/treasury-intelligence/main/"
+    base_url = "https://raw.githubusercontent.com/anchy7/treasury-intelligence/main/"
     
     try:
         prospects = pd.read_csv(base_url + "prospects.csv")
