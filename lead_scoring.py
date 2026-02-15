@@ -89,7 +89,7 @@ class LeadScoringEngine:
     def detect_transformation_signals(self, company_name):
         """
         Identify specific transformation projects
-        Returns list of signals (SAP migration, TMS implementation, etc.)
+        Returns list of signals with detailed descriptions
         """
         
         company_jobs = self.df[self.df['company'] == company_name]
@@ -101,54 +101,191 @@ class LeadScoringEngine:
             company_jobs['technologies'].fillna('')
         ).lower()
         
-        # SAP S/4HANA Migration
+        # SIGNAL 1: SAP S/4HANA Migration
         if 's/4hana' in all_text or 's4hana' in all_text:
             signals.append({
                 'type': 'SAP S/4HANA Migration',
                 'confidence': 'High',
-                'project_value': '€2-4M',
                 'duration': '18-24 months',
-                'service': 'Implementation & Change Management'
+                'service': 'S/4HANA Treasury Implementation & Change Management',
+                'description': 'ERP transformation project with 2027 deadline'
             })
         
-        # Cloud TMS Implementation
+        # SIGNAL 2: Cloud TMS Implementation - Kyriba
         if 'kyriba' in all_text:
             signals.append({
                 'type': 'Kyriba TMS Implementation',
                 'confidence': 'High',
-                'project_value': '€500K-1M',
                 'duration': '9-12 months',
-                'service': 'TMS Implementation & Training'
+                'service': 'Cloud TMS Implementation & Training',
+                'description': 'Moving to cloud-based treasury management system'
             })
         
-        # API Modernization
-        if 'api' in all_text and ('connectivity' in all_text or 'integration' in all_text):
+        # SIGNAL 3: Other Cloud TMS (GTreasury, FIS, Finastra)
+        tms_systems = {
+            'gtreasury': 'GTreasury',
+            'fis': 'FIS TMS',
+            'finastra': 'Finastra',
+            'bloomberg': 'Bloomberg AIM'
+        }
+        for keyword, system_name in tms_systems.items():
+            if keyword in all_text:
+                signals.append({
+                    'type': f'{system_name} Implementation',
+                    'confidence': 'High',
+                    'duration': '9-12 months',
+                    'service': 'TMS Selection & Implementation',
+                    'description': f'Cloud TMS implementation project - {system_name}'
+                })
+        
+        # SIGNAL 4: API Connectivity & Real-Time Treasury
+        if 'api' in all_text and ('connectivity' in all_text or 'integration' in all_text or 'real-time' in all_text):
             signals.append({
-                'type': 'API Connectivity & Automation',
+                'type': 'API Connectivity & Real-Time Treasury',
                 'confidence': 'Medium',
-                'project_value': '€200-500K',
                 'duration': '6-9 months',
-                'service': 'API Integration & Treasury Automation'
+                'service': 'API Integration & Treasury Automation',
+                'description': 'Building real-time connectivity with banks and systems'
             })
         
-        # Treasury Transformation Program
+        # SIGNAL 5: Treasury Transformation Program
         if len(company_jobs) >= 3 and any(kw in all_text for kw in ['transformation', 'program', 'change']):
             signals.append({
                 'type': 'Treasury Transformation Program',
                 'confidence': 'High',
-                'project_value': '€1-3M',
                 'duration': '12-24 months',
-                'service': 'Operating Model Design & PMO'
+                'service': 'Operating Model Design & PMO Services',
+                'description': 'Comprehensive treasury function overhaul'
             })
         
-        # ESG/Sustainable Finance
-        if any(kw in all_text for kw in ['esg', 'sustainable', 'green', 'csrd']):
+        # SIGNAL 6: ESG/Sustainable Finance
+        if any(kw in all_text for kw in ['esg', 'sustainable', 'green', 'csrd', 'taxonomy']):
             signals.append({
-                'type': 'ESG Treasury Build-Out',
+                'type': 'ESG Treasury & Sustainable Finance',
                 'confidence': 'Medium',
-                'project_value': '€150-400K',
                 'duration': '6-12 months',
-                'service': 'Sustainable Finance Advisory'
+                'service': 'Sustainable Finance Framework & CSRD Compliance',
+                'description': 'Building ESG treasury capabilities and reporting'
+            })
+        
+        # SIGNAL 7: Cash Pooling & In-House Bank
+        if any(kw in all_text for kw in ['cash pool', 'in-house bank', 'ihb', 'centralization']):
+            signals.append({
+                'type': 'Cash Pooling & In-House Bank Setup',
+                'confidence': 'High',
+                'duration': '6-12 months',
+                'service': 'Cash Structure Optimization & IHB Implementation',
+                'description': 'Centralizing cash and implementing in-house banking'
+            })
+        
+        # SIGNAL 8: Working Capital Optimization
+        if any(kw in all_text for kw in ['working capital', 'cash conversion', 'supply chain finance', 'payables', 'receivables']):
+            signals.append({
+                'type': 'Working Capital Optimization',
+                'confidence': 'Medium',
+                'duration': '6-9 months',
+                'service': 'Working Capital Advisory & Process Optimization',
+                'description': 'Improving cash conversion cycle and supply chain finance'
+            })
+        
+        # SIGNAL 9: FX & Commodity Risk Management
+        if any(kw in all_text for kw in ['hedge', 'hedging', 'forex', 'currency', 'commodity', 'derivatives']):
+            signals.append({
+                'type': 'FX & Risk Management Program',
+                'confidence': 'Medium',
+                'duration': '6-9 months',
+                'service': 'Risk Management Framework & Hedging Strategy',
+                'description': 'Implementing or upgrading risk management capabilities'
+            })
+        
+        # SIGNAL 10: Treasury Analytics & Reporting
+        if any(kw in all_text for kw in ['analytics', 'reporting', 'dashboard', 'visualization', 'power bi', 'tableau']):
+            signals.append({
+                'type': 'Treasury Analytics & Reporting',
+                'confidence': 'Medium',
+                'duration': '4-6 months',
+                'service': 'Treasury Data Warehouse & Analytics Implementation',
+                'description': 'Building advanced analytics and executive dashboards'
+            })
+        
+        # SIGNAL 11: Bank Relationship Optimization
+        if any(kw in all_text for kw in ['bank relationship', 'banking structure', 'bank connectivity', 'swift']):
+            signals.append({
+                'type': 'Bank Relationship Optimization',
+                'confidence': 'Medium',
+                'duration': '6-9 months',
+                'service': 'Banking Structure Review & Optimization',
+                'description': 'Optimizing bank relationships and connectivity'
+            })
+        
+        # SIGNAL 12: Post-Merger Integration
+        if any(kw in all_text for kw in ['integration', 'merger', 'acquisition', 'consolidation', 'harmonization']):
+            signals.append({
+                'type': 'Post-Merger Treasury Integration',
+                'confidence': 'High',
+                'duration': '12-18 months',
+                'service': 'M&A Treasury Integration & Harmonization',
+                'description': 'Integrating treasury functions after M&A activity'
+            })
+        
+        # SIGNAL 13: Instant Payments Implementation
+        if any(kw in all_text for kw in ['instant payment', 'sepa instant', 'real-time payment', 'rtp']):
+            signals.append({
+                'type': 'Instant Payments Implementation',
+                'confidence': 'High',
+                'duration': '6-9 months',
+                'service': 'Instant Payments Strategy & Implementation',
+                'description': 'Implementing real-time payment capabilities'
+            })
+        
+        # SIGNAL 14: Treasury Shared Service Center
+        if any(kw in all_text for kw in ['shared service', 'ssc', 'center of excellence', 'coe', 'centralization']):
+            signals.append({
+                'type': 'Treasury Shared Service Center',
+                'confidence': 'High',
+                'duration': '12-18 months',
+                'service': 'Shared Service Center Design & Implementation',
+                'description': 'Building treasury shared services or center of excellence'
+            })
+        
+        # SIGNAL 15: Robotic Process Automation (RPA)
+        if any(kw in all_text for kw in ['rpa', 'automation', 'robotic', 'bot']):
+            signals.append({
+                'type': 'Treasury Process Automation (RPA)',
+                'confidence': 'Medium',
+                'duration': '4-8 months',
+                'service': 'RPA Implementation & Process Automation',
+                'description': 'Automating manual treasury processes with bots'
+            })
+        
+        # SIGNAL 16: Treasury Policy & Procedures
+        if any(kw in all_text for kw in ['policy', 'procedure', 'governance', 'framework', 'guidelines']):
+            signals.append({
+                'type': 'Treasury Policy & Governance',
+                'confidence': 'Low',
+                'duration': '3-6 months',
+                'service': 'Policy Development & Governance Framework',
+                'description': 'Developing or updating treasury policies and procedures'
+            })
+        
+        # SIGNAL 17: Liquidity & Cash Forecasting
+        if any(kw in all_text for kw in ['forecast', 'liquidity', 'cash projection', 'planning']):
+            signals.append({
+                'type': 'Cash Forecasting Enhancement',
+                'confidence': 'Medium',
+                'duration': '4-6 months',
+                'service': 'Cash Forecasting Model & Process Optimization',
+                'description': 'Improving cash forecasting accuracy and process'
+            })
+        
+        # SIGNAL 18: Treasury Organization Design
+        if any(kw in all_text for kw in ['organization', 'org design', 'restructure', 'operating model', 'target operating model', 'tom']):
+            signals.append({
+                'type': 'Treasury Organization Redesign',
+                'confidence': 'High',
+                'duration': '6-12 months',
+                'service': 'Operating Model & Organization Design',
+                'description': 'Redesigning treasury organization structure and roles'
             })
         
         return signals
@@ -165,45 +302,6 @@ class LeadScoringEngine:
             return 'Tier 3: Qualified', '📋 Marketing Funnel'
         else:
             return 'Tier 4: Monitor', '👀 Database Only'
-    
-    def estimate_project_value(self, signals):
-        """
-        Estimate total project value based on detected signals
-        """
-        if not signals:
-            return '€0'
-        
-        # Parse project values and sum them
-        total_min = 0
-        total_max = 0
-        
-        for signal in signals:
-            value_str = signal['project_value']
-            # Parse "€500K-1M" format
-            matches = re.findall(r'€(\d+(?:\.\d+)?)(K|M)', value_str)
-            
-            if len(matches) >= 2:
-                # Range found
-                min_val = float(matches[0][0])
-                min_unit = matches[0][1]
-                max_val = float(matches[1][0])
-                max_unit = matches[1][1]
-                
-                # Convert to euros
-                min_euros = min_val * 1000 if min_unit == 'K' else min_val * 1000000
-                max_euros = max_val * 1000 if max_unit == 'K' else max_val * 1000000
-                
-                total_min += min_euros
-                total_max += max_euros
-        
-        if total_min == 0:
-            return '€0'
-        
-        # Format nicely
-        if total_max >= 1000000:
-            return f"€{total_min/1000000:.1f}-{total_max/1000000:.1f}M"
-        else:
-            return f"€{total_min/1000:.0f}-{total_max/1000:.0f}K"
     
     def analyze_all_companies(self):
         """
@@ -244,7 +342,8 @@ class LeadScoringEngine:
                 'jobs_last_30_days': len(last_30),
                 'locations': company_jobs['location'].nunique(),
                 'signals': signals,
-                'project_value': self.estimate_project_value(signals),
+                'signal_count': len(signals),
+                'primary_signal': signals[0]['type'] if signals else 'None',
                 'first_seen': company_jobs['date_scraped'].min(),
                 'last_activity': company_jobs['date_scraped'].max()
             })
@@ -284,9 +383,9 @@ class LeadScoringEngine:
                 'total_jobs': prospect['total_jobs'],
                 'jobs_last_30_days': prospect['jobs_last_30_days'],
                 'locations': prospect['locations'],
-                'project_value': prospect['project_value'],
                 'signal_count': len(prospect['signals']),
                 'primary_signal': prospect['signals'][0]['type'] if prospect['signals'] else 'None',
+                'all_signals': ' | '.join([s['type'] for s in prospect['signals']]),
                 'first_seen': prospect['first_seen'],
                 'last_activity': prospect['last_activity']
             }
@@ -332,12 +431,13 @@ def main():
         print(f"{i}. {prospect['company']}")
         print(f"   Score: {prospect['score']}/100 | {prospect['tier']}")
         print(f"   Activity: {prospect['jobs_last_30_days']} jobs in last 30 days")
-        print(f"   Project Value: {prospect['project_value']}")
+        print(f"   Total Signals: {prospect['signal_count']}")
         
         if prospect['signals']:
-            print(f"   Signals:")
-            for signal in prospect['signals'][:2]:  # Show top 2
-                print(f"      • {signal['type']} ({signal['project_value']})")
+            print(f"   Key Signals:")
+            for signal in prospect['signals'][:3]:  # Show top 3
+                print(f"      • {signal['type']}")
+                print(f"        Duration: {signal['duration']} | Service: {signal['service']}")
         
         print()
     
