@@ -2,6 +2,7 @@
 Email Job Alert Parser
 Parses LinkedIn job alert emails from Gmail (no subject filtering)
 Extracts Title / Company / Location from plain-text job cards
+Adds Country (from subject fallback to location heuristics)
 """
 
 import os
@@ -9,7 +10,7 @@ import base64
 import re
 import quopri
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Tuple, Optional
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -18,7 +19,6 @@ from googleapiclient.discovery import build
 import pandas as pd
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-
 LINKEDIN_SENDER = "jobalerts-noreply@linkedin.com"
 
 
@@ -31,12 +31,11 @@ class EmailJobParser:
     # Auth
     # ----------------------------
     def _get_gmail_service(self):
-        """Authenticate with Gmail API (supports env-based secrets)."""
         print("🔐 Authenticating with Gmail...")
 
         creds = None
 
-        # Optional: decode credentials from env (GitHub Actions secrets)
+        # GitHub Actions env-based secrets (base64)
         if os.environ.get("GMAIL_CREDENTIALS"):
             print("   Using credentials from environment (GMAIL_CREDENTIALS)")
             creds_data = base64.b64decode(os.environ["GMAIL_CREDENTIALS"])
@@ -49,11 +48,9 @@ class EmailJobParser:
             with open("token.json", "wb") as f:
                 f.write(token_data)
 
-        # Load token if exists
         if os.path.exists("token.json"):
             creds = Credentials.from_authorized_user_file("token.json", SCOPES)
 
-        # If no valid credentials, authenticate interactively (local only)
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
@@ -66,7 +63,6 @@ class EmailJobParser:
                 flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
                 creds = flow.run_local_server(port=0)
 
-            # Save token for reuse
             with open("token.json", "w") as token:
                 token.write(creds.to_json())
 
@@ -86,13 +82,9 @@ class EmailJobParser:
             print("❌ Gmail service not initialized")
             return []
 
-        # Gmail query notes:
-        # - after:YYYY/MM/DD works, but "newer_than:7d" is simple and robust
         query = f'from:({LINKEDIN_SENDER}) newer_than:{days_back}d'
-
         print(f"\n🔍 Searching Gmail...")
         print(f"   Query: {query}")
-        print(f"   Max results: {max_results}")
 
         try:
             results = (
@@ -112,24 +104,19 @@ class EmailJobParser:
     # Parsing helpers
     # ----------------------------
     def _decode_part_data(self, data_b64url: str) -> str:
-        """Decode Gmail API base64url body and also handle quoted-printable soft breaks."""
         raw = base64.urlsafe_b64decode(data_b64url.encode("utf-8"))
-        # Many LinkedIn bodies are quoted-printable → decode it safely
         try:
             raw = quopri.decodestring(raw)
         except Exception:
             pass
-        # Remove common quoted-printable soft line breaks just in case
         text = raw.decode("utf-8", errors="replace")
         text = text.replace("=\r\n", "").replace("=\n", "")
         return text
 
     def _extract_parts(self, payload: dict) -> List[dict]:
-        """Flatten Gmail message parts (recursive)."""
         parts = []
         if not payload:
             return parts
-
         if payload.get("parts"):
             for p in payload["parts"]:
                 parts.extend(self._extract_parts(p))
@@ -138,19 +125,13 @@ class EmailJobParser:
         return parts
 
     def _get_email_bodies(self, message: dict) -> Tuple[str, str]:
-        """
-        Return (plain_text, html_text).
-        Prefer parsing plain text for job cards.
-        """
         payload = message.get("payload", {})
         parts = self._extract_parts(payload)
 
         plain = ""
         html = ""
 
-        # Sometimes body is directly in payload without parts
         if payload.get("body", {}).get("data") and not parts:
-            # assume plain
             plain = self._decode_part_data(payload["body"]["data"])
             return plain, html
 
@@ -159,7 +140,6 @@ class EmailJobParser:
             data = part.get("body", {}).get("data")
             if not data:
                 continue
-
             decoded = self._decode_part_data(data)
             if mime == "text/plain" and not plain:
                 plain = decoded
@@ -169,110 +149,92 @@ class EmailJobParser:
         return plain, html
 
     def _clean_company(self, company: str) -> str:
-        company = re.sub(r"\s+", " ", company).strip()
+        company = re.sub(r"\s+", " ", (company or "")).strip()
         company = re.sub(r"\s+(GmbH|AG|SE|KGaA|Ltd|Inc|Corp|SA)\.?$", "", company, flags=re.I)
         return company.strip()
 
     def _clean_url(self, url: str) -> str:
-        url = url.strip()
-        # cut tracking params
-        url = url.split("?")[0]
-        return url
+        url = (url or "").strip()
+        return url.split("?")[0]
 
-    def _is_noise_line(self, line: str) -> bool:
-        l = line.strip()
-        if not l:
-            return True
-        noise_phrases = [
-            "Your job alert has been created",
-            "You’ll receive notifications",
-            "You=E2=80=99ll receive notifications",
-            "Apply with resume",
-            "Apply with resume & profile",
-            "school alumni",
-            "---------------------------------------------------------",
-        ]
-        if any(p.lower() in l.lower() for p in noise_phrases):
-            return True
-        # lines that are just separators or repeated hyphens
-        if re.fullmatch(r"[-=_]{6,}", l):
-            return True
-        return False
-
-    def _extract_jobs_from_plaintext(self, text: str) -> List[Dict]:
+    def _infer_country(self, subject: str, location: str) -> str:
         """
-        LinkedIn plain text format typically:
-            <Title>
-            <Company>
-            <Location>
-            View job: https://www.linkedin.com/comm/jobs/view/123...
-        We locate each "View job:" and read 3 meaningful lines above it.
+        1) Try subject like "... in Germany ..." or "... in Switzerland ..."
+        2) Fallback: location heuristic
+        """
+        subj = subject or ""
+        m = re.search(r"\bin\s+(Germany|Switzerland|Austria|Deutschland|Schweiz|Österreich)\b", subj, flags=re.I)
+        if m:
+            c = m.group(1).lower()
+            return {
+                "germany": "Germany",
+                "deutschland": "Germany",
+                "switzerland": "Switzerland",
+                "schweiz": "Switzerland",
+                "austria": "Austria",
+                "österreich": "Austria",
+            }.get(c, m.group(1))
+
+        loc = (location or "").lower()
+        swiss_markers = ["zurich", "zürich", "basel", "geneva", "genève", "lausanne", "bern", "zug", "lucerne", "luzern"]
+        if any(x in loc for x in swiss_markers):
+            return "Switzerland"
+
+        germany_markers = ["frankfurt", "munich", "münchen", "berlin", "hamburg", "stuttgart", "düsseldorf", "cologne", "köln"]
+        if any(x in loc for x in germany_markers):
+            return "Germany"
+
+        return "Unknown"
+
+    def _extract_jobs_from_plaintext(self, text: str, subject: str) -> List[Dict]:
+        """
+        Strong rule for LinkedIn plain text cards:
+        For each "View job: <url>" line:
+            nearest non-empty line above = location
+            next non-empty above = company
+            next non-empty above = title
         """
         if not text:
             return []
 
-        # Normalize line endings
         text = text.replace("\r\n", "\n").replace("\r", "\n")
-
-        # Find all view job occurrences and their positions
-        pattern = re.compile(r"View job:\s*(https?://\S+)", re.IGNORECASE)
-        matches = list(pattern.finditer(text))
-
-        jobs: List[Dict] = []
-        if not matches:
-            return jobs
-
         lines = text.split("\n")
 
-        # Build an index from character offset → line number
-        # (cheap approach: track cumulative lengths)
-        cum = 0
-        line_start_offsets = []
-        for ln in lines:
-            line_start_offsets.append(cum)
-            cum += len(ln) + 1  # + newline
+        view_pat = re.compile(r"View job:\s*(https?://\S+)", re.IGNORECASE)
 
-        def offset_to_line_idx(offset: int) -> int:
-            # last start offset <= offset
-            lo, hi = 0, len(line_start_offsets) - 1
-            while lo <= hi:
-                mid = (lo + hi) // 2
-                if line_start_offsets[mid] <= offset:
-                    lo = mid + 1
-                else:
-                    hi = mid - 1
-            return max(0, hi)
+        jobs: List[Dict] = []
 
-        for m in matches:
+        for idx, line in enumerate(lines):
+            m = view_pat.search(line)
+            if not m:
+                continue
+
             url = self._clean_url(m.group(1))
-            line_idx = offset_to_line_idx(m.start())
 
-            # Look upwards for candidate lines
-            candidates = []
-            lookback = 12  # enough to skip "Apply..." or blank lines
-            for i in range(line_idx - 1, max(-1, line_idx - lookback), -1):
-                l = lines[i].strip()
-                if self._is_noise_line(l):
+            # Walk upwards to collect 3 non-empty lines
+            collected: List[str] = []
+            for j in range(idx - 1, -1, -1):
+                candidate = lines[j].strip()
+                if not candidate:
                     continue
-                # Stop if we bump into another "View job:" block or major header
-                if l.lower().startswith("view job:"):
+                # Stop if we hit another card's "View job:" (rare but safe)
+                if candidate.lower().startswith("view job:"):
                     break
-                candidates.append(l)
-                if len(candidates) >= 3:
+                collected.append(candidate)
+                if len(collected) == 3:
                     break
 
-            # candidates are collected bottom-up; reverse to get Title, Company, Location
-            candidates = list(reversed(candidates))
-
-            title = candidates[0] if len(candidates) >= 1 else "Unknown"
-            company = candidates[1] if len(candidates) >= 2 else "Unknown"
-            location = candidates[2] if len(candidates) >= 3 else "Unknown"
+            # collected = [location, company, title] in reverse order? Actually collected is bottom-up:
+            # first appended = location, second = company, third = title
+            location = collected[0] if len(collected) >= 1 else "Unknown"
+            company = collected[1] if len(collected) >= 2 else "Unknown"
+            title = collected[2] if len(collected) >= 3 else "Unknown"
 
             company = self._clean_company(company)
+            country = self._infer_country(subject, location)
 
-            # Basic sanity checks (avoid capturing random headers)
+            # sanity
             if title == "Unknown" or company == "Unknown":
-                # still keep it if you want, but usually better to skip
                 continue
 
             jobs.append(
@@ -280,6 +242,7 @@ class EmailJobParser:
                     "title": title,
                     "company": company,
                     "location": location,
+                    "country": country,
                     "url": url,
                     "source": "LinkedIn (Email)",
                     "date_scraped": datetime.now().strftime("%Y-%m-%d"),
@@ -302,14 +265,12 @@ class EmailJobParser:
             tech.append("API")
         if "swift" in text:
             tech.append("SWIFT")
-
         return tech
 
     # ----------------------------
     # Main email parse
     # ----------------------------
     def parse_linkedin_email(self, msg_id: str) -> List[Dict]:
-        """Parse a single LinkedIn email using plain text body first."""
         try:
             message = (
                 self.service.users()
@@ -327,14 +288,10 @@ class EmailJobParser:
             print(f"   👤 From: {sender}")
             print(f"   🗓️  Date: {date_h}")
 
-            plain, html = self._get_email_bodies(message)
+            plain, _html = self._get_email_bodies(message)
 
-            # 1) Parse plain text (best for the sample you shared)
-            jobs = self._extract_jobs_from_plaintext(plain)
-
-            print(f"   🔗 Extracted {len(jobs)} jobs from plain text")
-
-            # 2) (Optional) If you want, you could add an HTML fallback here later.
+            jobs = self._extract_jobs_from_plaintext(plain, subject)
+            print(f"   ✅ Extracted {len(jobs)} jobs (plain text cards)")
             return jobs
 
         except Exception as e:
@@ -361,17 +318,14 @@ class EmailJobParser:
             print(f"📧 Email {i}/{len(messages)} (id={msg_id})")
 
             jobs = self.parse_linkedin_email(msg_id)
-
             if jobs:
-                # add tech detection
                 for j in jobs:
                     j["technologies"] = ", ".join(self.detect_technologies(j.get("title", "")))
                 self.jobs.extend(jobs)
-                print(f"   ✅ Added {len(jobs)} jobs")
+                print(f"   ➕ Added {len(jobs)} jobs")
             else:
                 print("   ⚠️  No jobs extracted")
 
-        # De-dup
         if self.jobs:
             df = pd.DataFrame(self.jobs)
             before = len(df)
@@ -398,14 +352,23 @@ class EmailJobParser:
         df = pd.DataFrame(self.jobs)
         print(f"\n📧 LinkedIn email jobs: {len(df)}")
 
+        # Ensure columns exist
+        for col in ["country", "technologies"]:
+            if col not in df.columns:
+                df[col] = ""
+
         if os.path.exists(filename):
             print(f"📂 Found existing file: {filename}")
             existing_df = pd.read_csv(filename)
-            print(f"   Current database: {len(existing_df)} jobs")
+
+            # Add missing columns to existing if needed
+            for col in df.columns:
+                if col not in existing_df.columns:
+                    existing_df[col] = ""
 
             combined_df = pd.concat([existing_df, df], ignore_index=True)
-            before_count = len(combined_df)
 
+            before_count = len(combined_df)
             combined_df.drop_duplicates(subset=["company", "title", "location"], keep="last", inplace=True)
             after_count = len(combined_df)
             removed = before_count - after_count
