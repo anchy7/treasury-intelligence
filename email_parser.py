@@ -1,29 +1,33 @@
 """
-Email Job Alert Parser
-Parses LinkedIn job alert emails from Gmail (ALL emails from sender, no subject filtering)
+Email Job Alert Parser (LinkedIn)
+Parses LinkedIn job alert emails from Gmail (all emails from sender, no subject filtering)
 """
 
 import os
 import base64
 import re
-from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional
+import quopri
+from datetime import datetime, timedelta
+from typing import List, Dict, Tuple, Optional
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-
 from bs4 import BeautifulSoup
 import pandas as pd
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
-LINKEDIN_SENDERS = [
-    "jobalerts-noreply@linkedin.com",
-    # keep these as optional fallbacks; comment out if you only want the one sender
-    # "jobs-noreply@linkedin.com",
-]
+LINKEDIN_SENDER = "jobalerts-noreply@linkedin.com"
+
+# Accept both:
+# - https://www.linkedin.com/jobs/view/123...
+# - https://www.linkedin.com/comm/jobs/view/123...
+JOB_URL_RE = re.compile(r"https?://(?:www\.)?linkedin\.com/(?:comm/)?jobs/view/\d+", re.IGNORECASE)
+
+# Lines that often split job blocks in text/plain
+SEPARATOR_RE = re.compile(r"^-{10,}\s*$")
 
 
 class EmailJobParser:
@@ -31,16 +35,13 @@ class EmailJobParser:
         self.service = self._get_gmail_service()
         self.jobs: List[Dict] = []
 
-    # -----------------------------
-    # AUTH
-    # -----------------------------
     def _get_gmail_service(self):
-        """Authenticate with Gmail API. Prefer env vars (GitHub). Fallback to local auth."""
+        """Authenticate with Gmail API"""
         print("🔐 Authenticating with Gmail...")
 
-        creds: Optional[Credentials] = None
+        creds = None
 
-        # If GitHub Actions provides base64-encoded files, write them
+        # Optional: decode credentials/token from env (GitHub Actions)
         if os.environ.get("GMAIL_CREDENTIALS"):
             print("   Using credentials from environment (GMAIL_CREDENTIALS)")
             creds_data = base64.b64decode(os.environ["GMAIL_CREDENTIALS"])
@@ -55,41 +56,29 @@ class EmailJobParser:
 
         # Load token if exists
         if os.path.exists("token.json"):
-            try:
-                creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-            except Exception as e:
-                print(f"⚠️  Could not read token.json: {e}")
-                creds = None
+            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
 
         # If no valid credentials, authenticate
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                print("   Refreshing expired token...")
                 creds.refresh(Request())
             else:
-                # Local-only flow
                 if not os.path.exists("credentials.json"):
                     print("❌ credentials.json not found!")
-                    print("   In GitHub: you should provide GMAIL_TOKEN (and optionally GMAIL_CREDENTIALS).")
-                    print("   Locally: place credentials.json in project root to authenticate.")
+                    print("   Provide it via repo/env secrets or run locally once to create token.json")
                     return None
 
-                print("   Running local OAuth flow...")
                 flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
                 creds = flow.run_local_server(port=0)
 
-            # Save token
-            with open("token.json", "w", encoding="utf-8") as token:
+            with open("token.json", "w") as token:
                 token.write(creds.to_json())
 
         print("✅ Gmail authentication successful\n")
         return build("gmail", "v1", credentials=creds)
 
-    # -----------------------------
-    # SEARCH EMAILS
-    # -----------------------------
-    def get_linkedin_emails(self, days_back=7, max_results=50):
-        """Fetch ALL LinkedIn job alert emails from specified sender(s), no subject filtering."""
+    def get_linkedin_emails(self, days_back: int = 7, max_results: int = 200) -> List[Dict]:
+        """Fetch all LinkedIn job alert emails from sender (no subject filtering)."""
         print("=" * 60)
         print("📧 FETCHING LINKEDIN JOB ALERT EMAILS")
         print("=" * 60)
@@ -98,264 +87,273 @@ class EmailJobParser:
             print("❌ Gmail service not initialized")
             return []
 
-        # Build sender OR query
-        sender_query = " OR ".join([f"from:({s})" for s in LINKEDIN_SENDERS])
-        query = f"in:anywhere ({sender_query}) newer_than:{days_back}d"
+        # Use newer_than to avoid date-format edge cases
+        query = f"from:({LINKEDIN_SENDER}) newer_than:{days_back}d"
 
-        print(f"\n🔍 Gmail query: {query}")
-        print(f"   Date range: last {days_back} days")
-        print(f"   Max results: {max_results}")
+        print("\n🔍 Searching for emails...")
+        print(f"   Query: {query}")
+
+        messages: List[Dict] = []
+        page_token = None
 
         try:
-            results = self.service.users().messages().list(
-                userId="me",
-                q=query,
-                maxResults=max_results,
-            ).execute()
+            while True:
+                resp = (
+                    self.service.users()
+                    .messages()
+                    .list(
+                        userId="me",
+                        q=query,
+                        maxResults=min(100, max_results - len(messages)),
+                        pageToken=page_token,
+                    )
+                    .execute()
+                )
 
-            messages = results.get("messages", [])
-            print(f"\n✅ Found {len(messages)} LinkedIn emails\n")
+                messages.extend(resp.get("messages", []))
+                page_token = resp.get("nextPageToken")
 
-            # Optional: print first few message IDs
-            for m in messages[:5]:
-                print(f"   • msg id: {m.get('id')}")
+                if not page_token or len(messages) >= max_results:
+                    break
 
+            print(f"\n✅ Found {len(messages)} LinkedIn emails in last {days_back} days\n")
             return messages
 
         except Exception as e:
             print(f"❌ Error fetching emails: {e}")
             return []
 
-    # -----------------------------
-    # PARSING
-    # -----------------------------
-    def parse_linkedin_email(self, msg_id: str):
-        """Parse individual LinkedIn email and extract job postings."""
+    def parse_linkedin_email(self, msg_id: str) -> List[Dict]:
+        """Parse a single LinkedIn email into job dicts."""
         try:
-            message = self.service.users().messages().get(
-                userId="me",
-                id=msg_id,
-                format="full",
-            ).execute()
+            message = (
+                self.service.users()
+                .messages()
+                .get(userId="me", id=msg_id, format="full")
+                .execute()
+            )
 
-            subject = self._get_header(message, "Subject") or ""
-            from_header = self._get_header(message, "From") or ""
-            date_header = self._get_header(message, "Date") or ""
+            headers = message.get("payload", {}).get("headers", [])
+            subject = self._get_header(headers, "Subject") or ""
+            from_ = self._get_header(headers, "From") or ""
+            date_ = self._get_header(headers, "Date") or ""
 
-            print(f"   ✉️  Subject: {subject[:90]}")
-            print(f"   👤 From: {from_header[:90]}")
-            if date_header:
-                print(f"   🗓️  Date: {date_header[:90]}")
+            print(f"   ✉️  Subject: {subject}")
+            print(f"   👤 From: {from_}")
+            print(f"   🗓️  Date: {date_}")
 
-            body_html = self._get_email_body_html(message)
-            if not body_html:
-                print("   ⚠️  No HTML body found")
-                return []
+            html_body, text_body = self._get_bodies(message)
 
-            soup = BeautifulSoup(body_html, "html.parser")
+            # 1) Try extracting URLs from text blocks (most reliable for your sample format)
+            jobs_from_text = self._extract_jobs_from_text(text_body)
 
-            # LinkedIn job links often look like linkedin.com/jobs/view/<id>
-            job_links = soup.find_all("a", href=re.compile(r"linkedin\.com/jobs/view/\d+"))
-            print(f"   🔗 Found {len(job_links)} job links")
+            # 2) Also extract URLs from HTML anchors (as fallback / additional coverage)
+            jobs_from_html = self._extract_jobs_from_html(html_body)
 
-            jobs = []
+            # Merge + de-duplicate (by url)
+            combined = {j["url"]: j for j in (jobs_from_text + jobs_from_html)}.values()
+            jobs = list(combined)
 
-            for link in job_links:
-                try:
-                    url = link.get("href", "")
-                    url = url.split("?")[0]  # remove tracking
+            print(f"   🔗 Extracted {len(jobs)} job(s)")
 
-                    # title guess
-                    title = link.get_text(strip=True) or "Unknown"
-
-                    # find a surrounding container
-                    parent = link.find_parent(["tr", "td", "table", "div"]) or link.parent
-                    parent_text = parent.get_text(" ", strip=True) if parent else ""
-
-                    # company extraction: LinkedIn alerts often contain "at Company"
-                    company = self._extract_company(parent_text)
-
-                    # location extraction: best-effort
-                    location = self._extract_location(parent_text) or "Unknown"
-
-                    if title != "Unknown" and len(title) > 5:
-                        jobs.append(
-                            {
-                                "title": title,
-                                "company": self._clean_company(company) if company else "Unknown",
-                                "location": location,
-                                "url": url,
-                                "source": "LinkedIn",
-                                "date_scraped": datetime.now().strftime("%Y-%m-%d"),
-                            }
-                        )
-                except Exception as e:
-                    print(f"   ⚠️  Error parsing job link: {str(e)[:120]}")
-                    continue
-
-            # Filter out unknown company entries (optional: keep them if you prefer)
-            cleaned = []
+            # Enrich/normalize
+            out = []
             for j in jobs:
-                if j["company"] != "Unknown":
-                    cleaned.append(j)
+                j["source"] = "LinkedIn"
+                j["date_scraped"] = datetime.now().strftime("%Y-%m-%d")
+                j["company"] = self._clean_company(j.get("company", "Unknown"))
+                j["technologies"] = ", ".join(self.detect_technologies((j.get("title") or "") + " " + (j.get("company") or "")))
+                out.append(j)
 
-            if len(cleaned) != len(jobs):
-                print(f"   🧹 Filtered {len(jobs) - len(cleaned)} jobs with unknown company")
-
-            return cleaned
+            return out
 
         except Exception as e:
-            print(f"   ❌ Error parsing email {msg_id}: {e}")
+            print(f"   ❌ Error parsing email: {e}")
             return []
 
-    def _get_header(self, message, name: str) -> Optional[str]:
-        headers = message.get("payload", {}).get("headers", [])
+    def _get_bodies(self, message) -> Tuple[str, str]:
+        """Extract decoded HTML + text/plain bodies from Gmail message."""
+        html = ""
+        text = ""
+
+        def decode_part_data(data_b64: str) -> str:
+            raw = base64.urlsafe_b64decode(data_b64.encode("utf-8"))
+            # Some parts are quoted-printable-like; quopri is safe to apply
+            raw = quopri.decodestring(raw)
+            try:
+                return raw.decode("utf-8", errors="replace")
+            except Exception:
+                return raw.decode(errors="replace")
+
+        payload = message.get("payload", {})
+
+        # Recursive walk of MIME parts
+        stack = [payload]
+        while stack:
+            part = stack.pop()
+            mime = part.get("mimeType", "")
+            body = part.get("body", {})
+            data = body.get("data")
+
+            if data:
+                decoded = decode_part_data(data)
+                if mime == "text/html" and not html:
+                    html = decoded
+                elif mime == "text/plain" and not text:
+                    text = decoded
+
+            for sub in part.get("parts", []) or []:
+                stack.append(sub)
+
+        return html or "", text or ""
+
+    def _extract_jobs_from_text(self, text: str) -> List[Dict]:
+        """Parse jobs from the text/plain format using 'View job:' blocks."""
+        if not text:
+            return []
+
+        lines = [ln.strip() for ln in text.splitlines()]
+        jobs: List[Dict] = []
+
+        # Build blocks separated by dashed lines
+        blocks: List[List[str]] = []
+        current: List[str] = []
+        for ln in lines:
+            if SEPARATOR_RE.match(ln):
+                if current:
+                    blocks.append(current)
+                    current = []
+            else:
+                # keep even empty lines to preserve proximity, but we'll ignore later
+                current.append(ln)
+        if current:
+            blocks.append(current)
+
+        # For each block, find "View job:" lines and infer title/company/location above it
+        for block in blocks:
+            for i, ln in enumerate(block):
+                if ln.lower().startswith("view job:"):
+                    # extract URL
+                    m = JOB_URL_RE.search(ln)
+                    if not m:
+                        # sometimes URL wraps to next line(s)
+                        joined = " ".join(block[i : min(i + 3, len(block))])
+                        m = JOB_URL_RE.search(joined)
+                    if not m:
+                        continue
+
+                    url = self._clean_url(m.group(0))
+
+                    # look backwards for meaningful lines (title/company/location)
+                    back = []
+                    j = i - 1
+                    while j >= 0 and len(back) < 6:
+                        cand = block[j].strip()
+                        if cand and not cand.lower().startswith("your job alert has been created"):
+                            back.append(cand)
+                        j -= 1
+                    back = list(reversed(back))
+
+                    title = back[-3] if len(back) >= 3 else (back[-1] if back else "Unknown")
+                    company = back[-2] if len(back) >= 2 else "Unknown"
+                    location = back[-1] if back else "Unknown"
+
+                    # filter out noise lines that can appear between company/location
+                    noise = {"apply with resume & profile", "view job:"}
+                    if location.lower() in noise:
+                        location = "Unknown"
+
+                    jobs.append(
+                        {
+                            "title": title,
+                            "company": company,
+                            "location": location,
+                            "url": url,
+                        }
+                    )
+
+        # If blocks approach fails, do a simple URL-only extraction
+        if not jobs:
+            urls = set(JOB_URL_RE.findall(text))
+            for u in urls:
+                jobs.append({"title": "Unknown", "company": "Unknown", "location": "Unknown", "url": self._clean_url(u)})
+
+        return jobs
+
+    def _extract_jobs_from_html(self, html: str) -> List[Dict]:
+        """Extract job URLs from HTML anchors (fallback)."""
+        if not html:
+            return []
+        soup = BeautifulSoup(html, "html.parser")
+        jobs: List[Dict] = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            m = JOB_URL_RE.search(href)
+            if not m:
+                continue
+            url = self._clean_url(m.group(0))
+            title = a.get_text(strip=True) or "Unknown"
+            jobs.append({"title": title, "company": "Unknown", "location": "Unknown", "url": url})
+        return jobs
+
+    def _clean_url(self, url: str) -> str:
+        """Strip tracking params."""
+        return url.split("?")[0].strip()
+
+    def _get_header(self, headers: List[Dict], name: str) -> Optional[str]:
         for h in headers:
             if h.get("name", "").lower() == name.lower():
                 return h.get("value")
         return None
 
-    def _get_email_body_html(self, message) -> str:
-        """
-        Extract HTML body from Gmail message payload.
-        Handles nested multipart structures.
-        """
-        payload = message.get("payload", {})
-        return self._find_part_recursive(payload)
-
-    def _find_part_recursive(self, part: dict) -> str:
-        # If this part is HTML and contains data, decode it
-        mime = part.get("mimeType", "")
-        body = part.get("body", {})
-        data = body.get("data")
-
-        if mime == "text/html" and data:
-            try:
-                return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-            except Exception:
-                return ""
-
-        # If multipart, walk children
-        for p in part.get("parts", []) or []:
-            found = self._find_part_recursive(p)
-            if found:
-                return found
-
-        # Some emails store body directly without parts
-        if data:
-            try:
-                return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-            except Exception:
-                return ""
-
-        return ""
-
-    # -----------------------------
-    # EXTRACTION HELPERS
-    # -----------------------------
-    def _extract_company(self, text: str) -> Optional[str]:
-        if not text:
-            return None
-
-        # Try common patterns
-        # "at Company" / "bei Company"
-        m = re.search(r"\b(at|bei)\s+([A-Z][A-Za-z0-9\s&\.\-]+?)(?:\s+(in|auf|•|\||-)|$)", text)
-        if m:
-            return m.group(2).strip()
-
-        # Sometimes "Company • Location"
-        m2 = re.search(r"^([A-Z][A-Za-z0-9\s&\.\-]{2,})\s+•\s+", text)
-        if m2:
-            return m2.group(1).strip()
-
-        return None
-
-    def _extract_location(self, text: str) -> Optional[str]:
-        if not text:
-            return None
-
-        # simple heuristics; extend as needed
-        # City, Country or City (case-insensitive)
-        cities = [
-            "Zurich", "Zürich", "Basel", "Geneva", "Genf", "Bern", "Zug", "Lausanne",
-            "Munich", "München", "Frankfurt", "Berlin", "Hamburg", "Stuttgart",
-            "Düsseldorf", "Cologne", "Köln", "Vienna", "Wien"
-        ]
-        for c in cities:
-            if re.search(rf"\b{re.escape(c)}\b", text, flags=re.IGNORECASE):
-                return c
-
-        # fallback: "in X"
-        m = re.search(r"\bin\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß\-\s]{2,})", text)
-        if m:
-            return m.group(1).strip()
-
-        return None
-
     def _clean_company(self, company: str) -> str:
-        if not company:
-            return "Unknown"
-        company = re.sub(r"\s+", " ", company).strip()
+        company = re.sub(r"\s+", " ", str(company)).strip()
         company = re.sub(r"\s+(GmbH|AG|SE|KGaA|Ltd|Inc|Corp|SA)\.?$", "", company, flags=re.IGNORECASE)
-        return company.strip() or "Unknown"
+        return company.strip()
 
-    def detect_technologies(self, title: str) -> List[str]:
+    def detect_technologies(self, text: str) -> List[str]:
         tech = []
-        text = (title or "").lower()
+        t = (text or "").lower()
 
-        if re.search(r"s[/]?4\s?hana|s4hana", text):
+        if re.search(r"s[/]?4\s?hana|s4hana", t):
             tech.append("SAP S/4HANA")
-        if "kyriba" in text:
+        if "kyriba" in t:
             tech.append("Kyriba")
-        if re.search(r"\bpython\b", text):
+        if "python" in t:
             tech.append("Python")
-        if re.search(r"\bapi\b", text):
+        if re.search(r"\bapi\b", t):
             tech.append("API")
-        if "swift" in text:
+        if "swift" in t:
             tech.append("SWIFT")
-
         return tech
 
-    # -----------------------------
-    # PIPELINE
-    # -----------------------------
-    def process_all_emails(self, days_back=7, max_results=50):
+    def process_all_emails(self, days_back: int = 7):
         print("\n" + "=" * 60)
         print("📧 EMAIL JOB ALERT PARSER")
         print("=" * 60)
         print(f"⏰ Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 60 + "\n")
 
-        messages = self.get_linkedin_emails(days_back=days_back, max_results=max_results)
+        messages = self.get_linkedin_emails(days_back)
 
         if not messages:
-            print("⚠️  No LinkedIn emails found with current query.")
-            print("   Tips:")
-            print("   - Increase days_back (e.g., 14)")
-            print("   - Verify sender in Gmail UI and adjust LINKEDIN_SENDERS")
+            print("⚠️  No LinkedIn emails found.")
             return
 
-        print("\n🔍 Parsing emails...\n")
-
+        print("🔍 Parsing emails...\n")
         for i, msg in enumerate(messages, 1):
             print(f"📧 Email {i}/{len(messages)} (id={msg['id']})")
             jobs = self.parse_linkedin_email(msg["id"])
-
             if jobs:
                 self.jobs.extend(jobs)
-                print(f"   ✅ Extracted {len(jobs)} jobs\n")
             else:
-                print(f"   ⚠️  No jobs extracted\n")
+                print("   ⚠️  No jobs extracted")
 
-        # De-duplicate
+        # De-duplicate by URL
         if self.jobs:
             df = pd.DataFrame(self.jobs)
             before = len(df)
-            df.drop_duplicates(subset=["title", "company", "location"], keep="first", inplace=True)
-
-            # Add technology detection
-            df["technologies"] = df["title"].apply(lambda x: ", ".join(self.detect_technologies(x)))
-
+            df.drop_duplicates(subset=["url"], keep="first", inplace=True)
             after = len(df)
             self.jobs = df.to_dict("records")
 
@@ -366,7 +364,7 @@ class EmailJobParser:
         else:
             print("\n⚠️  No jobs extracted from emails")
 
-    def save_to_csv(self, filename="treasury_jobs.csv"):
+    def save_to_csv(self, filename: str = "treasury_jobs.csv"):
         print("\n" + "=" * 60)
         print("💾 SAVING EMAIL DATA")
         print("=" * 60)
@@ -381,20 +379,16 @@ class EmailJobParser:
         if os.path.exists(filename):
             print(f"📂 Found existing file: {filename}")
             existing_df = pd.read_csv(filename)
-            print(f"   Current database: {len(existing_df)} jobs")
-
             combined_df = pd.concat([existing_df, df], ignore_index=True)
 
             before_count = len(combined_df)
-            combined_df.drop_duplicates(subset=["company", "title", "location"], keep="last", inplace=True)
+            combined_df.drop_duplicates(subset=["company", "title", "location", "url"], keep="last", inplace=True)
             after_count = len(combined_df)
-            removed = before_count - after_count
 
             combined_df.to_csv(filename, index=False)
 
             print(f"\n📊 Final Statistics:")
-            print(f"   LinkedIn jobs added: {len(df)}")
-            print(f"   Duplicates removed: {removed}")
+            print(f"   Duplicates removed: {before_count - after_count}")
             print(f"   Total in database: {after_count}")
         else:
             df.to_csv(filename, index=False)
@@ -405,11 +399,7 @@ class EmailJobParser:
 
 def main():
     parser = EmailJobParser()
-
-    # Increase days_back if you want to be extra safe
-    parser.process_all_emails(days_back=7, max_results=50)
-
-    # Merge into the same CSV your scraper uses
+    parser.process_all_emails(days_back=7)
     parser.save_to_csv("treasury_jobs.csv")
 
     print("\n" + "=" * 60)
