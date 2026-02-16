@@ -1,5 +1,5 @@
 company,score,tier,action,total_jobs,jobs_last_30_days,locations,signal_count,primary_signal,all_signals,first_seen,last_activity
-Unknown,60,Tier 2: Warm,🌡️ Targeted Campaign,50,50,10,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-02-15,2026-02-15
+Unknown,60,Tier 2: Warm,🌡️ Targeted Campaign,61,61,11,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-02-15,2026-02-16
 SAP,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-15,2026-02-15
 Sopra Steria,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-15,2026-02-15
 Giesecke+Devrient,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-02-15,2026-02-15
@@ -9,5 +9,5 @@ zeb,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-15,2026-02-15
 EY Deutschland,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-15,2026-02-15
 KPMG AG Wirtschaftsprüfungsgesellschaft,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-15,2026-02-15
 Preyer,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-15,2026-02-15
-UBS,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-15,2026-02-15
-AEW Energie,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-15,2026-02-15
+UBS,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-16,2026-02-16
+PwC,20,Tier 4: Monitor,👀 Database Only,2,2,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-02-16,2026-02-16
