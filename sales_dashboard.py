@@ -27,7 +27,7 @@ st.markdown("""
 @st.cache_data(ttl=3600)
 def load_jobs():
     """Load all jobs from GitHub"""
-    base_url = "https://raw.githubusercontent.com/YOUR-USERNAME/treasury-intelligence/main/"
+    base_url = "https://raw.githubusercontent.com/anchy7/treasury-intelligence/main/"
     
     try:
         df = pd.read_csv(base_url + "treasury_jobs.csv")
