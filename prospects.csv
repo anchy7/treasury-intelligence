@@ -1,6 +1,6 @@
 company,score,tier,action,total_jobs,jobs_last_30_days,locations,signal_count,primary_signal,all_signals,first_seen,last_activity
-Unknown,70,Tier 2: Warm,🌡️ Targeted Campaign,91,91,11,2,Treasury Transformation Program,Treasury Transformation Program | Treasury Organization Redesign,2026-02-15,2026-02-16
-SAP,45,Tier 3: Qualified,📋 Marketing Funnel,3,3,2,0,None,,2026-02-16,2026-02-16
+Unknown,70,Tier 2: Warm,🌡️ Targeted Campaign,93,93,10,2,Treasury Transformation Program,Treasury Transformation Program | Treasury Organization Redesign,2026-02-15,2026-02-17
+SAP,45,Tier 3: Qualified,📋 Marketing Funnel,3,3,2,0,None,,2026-02-16,2026-02-17
 Sopra Steria,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-16,2026-02-16
 Deloitte,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-16,2026-02-16
 Giesecke+Devrient,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-02-16,2026-02-16
@@ -10,10 +10,10 @@ zeb,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-16,2026-02-16
 EY Deutschland,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-16,2026-02-16
 KPMG AG Wirtschaftsprüfungsgesellschaft,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-16,2026-02-16
 Preyer,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-16,2026-02-16
-Kanadevia Inova,25,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-16,2026-02-16
+Kanadevia Inova,25,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-17,2026-02-17
 UBS,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-16,2026-02-16
 PwC,20,Tier 4: Monitor,👀 Database Only,2,2,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-02-16,2026-02-16
-Keystone Recruitment,20,Tier 4: Monitor,👀 Database Only,3,3,1,0,None,,2026-02-16,2026-02-16
-Sensirion,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-16,2026-02-16
-Ronal,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-16,2026-02-16
-Camenzind Human Resources,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-16,2026-02-16
+Keystone Recruitment,20,Tier 4: Monitor,👀 Database Only,3,3,1,0,None,,2026-02-17,2026-02-17
+Sensirion,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-17,2026-02-17
+Ronal,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-17,2026-02-17
+Camenzind Human Resources,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-17,2026-02-17
