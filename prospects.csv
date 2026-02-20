@@ -1,6 +1,6 @@
 company,score,tier,action,total_jobs,jobs_last_30_days,locations,signal_count,primary_signal,all_signals,first_seen,last_activity
-Unknown,70,Tier 2: Warm,🌡️ Targeted Campaign,104,104,11,3,Treasury Transformation Program,Treasury Transformation Program | Cash Forecasting Enhancement | Treasury Organization Redesign,2026-02-15,2026-02-19
-SAP,45,Tier 3: Qualified,📋 Marketing Funnel,3,3,2,0,None,,2026-02-19,2026-02-19
+Unknown,70,Tier 2: Warm,🌡️ Targeted Campaign,108,108,11,3,Treasury Transformation Program,Treasury Transformation Program | Cash Forecasting Enhancement | Treasury Organization Redesign,2026-02-15,2026-02-20
+SAP,45,Tier 3: Qualified,📋 Marketing Funnel,3,3,2,0,None,,2026-02-19,2026-02-20
 Sopra Steria,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-19,2026-02-19
 Deloitte,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-19,2026-02-19
 Giesecke+Devrient,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-02-19,2026-02-19
@@ -12,6 +12,7 @@ KPMG AG Wirtschaftsprüfungsgesellschaft,25,Tier 4: Monitor,👀 Database Only,1
 Preyer,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-19,2026-02-19
 UBS,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-16,2026-02-16
 PwC,20,Tier 4: Monitor,👀 Database Only,2,2,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-02-16,2026-02-16
-Keystone Recruitment,20,Tier 4: Monitor,👀 Database Only,3,3,1,0,None,,2026-02-19,2026-02-19
-Würth Management,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-19,2026-02-19
 Steck Human Resources Management,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-19,2026-02-19
+Keystone Recruitment,20,Tier 4: Monitor,👀 Database Only,3,3,1,0,None,,2026-02-20,2026-02-20
+Sensirion,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-20,2026-02-20
+Würth Management,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-20,2026-02-20
