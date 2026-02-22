@@ -37,6 +37,86 @@ def load_jobs():
         st.error(f"Error loading data: {e}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=3600)
+def load_crm_data():
+    """Load CRM companies data from GitHub"""
+    base_url = "https://raw.githubusercontent.com/anchy7/treasury-intelligence/main/"
+    
+    try:
+        # Load CRM data with semicolon separator
+        df = pd.read_csv(base_url + "crm_all_companies.csv", sep=';', encoding='utf-8')
+        
+        # Clean company names for matching
+        df['Company name'] = df['Company name'].str.strip()
+        df['company_clean'] = df['Company name'].str.lower().str.strip()
+        
+        # Parse dates - handle empty strings
+        df['Last Contacted'] = df['Last Contacted'].replace('', pd.NaT)
+        df['Last Contacted'] = pd.to_datetime(df['Last Contacted'], format='%d/%m/%Y %H:%M', errors='coerce')
+        
+        return df
+    except Exception as e:
+        st.warning(f"Could not load CRM data: {e}")
+        return pd.DataFrame()
+
+def normalize_company_name(company):
+    """
+    Normalize company name for matching
+    Removes common suffixes and standardizes format
+    """
+    if pd.isna(company):
+        return ""
+    
+    company = str(company).strip().lower()
+    
+    # Remove common legal suffixes
+    suffixes = [
+        ' gmbh', ' ag', ' se', ' kg', ' kgaa', ' ltd', ' limited', 
+        ' inc', ' inc.', ' corp', ' corporation', ' sa', ' plc',
+        ' b.v.', ' n.v.', ' llc', ' gmbh & co. kg'
+    ]
+    
+    for suffix in suffixes:
+        if company.endswith(suffix):
+            company = company[:-len(suffix)].strip()
+    
+    # Remove dots, commas, and extra spaces
+    company = company.replace('.', '').replace(',', '').strip()
+    company = ' '.join(company.split())  # Normalize whitespace
+    
+    return company
+
+def check_company_in_crm(company, crm_df):
+    """
+    Check if company exists in CRM and return last contacted date
+    Returns: (in_crm: bool, last_contacted: date or None)
+    """
+    if crm_df.empty or pd.isna(company):
+        return False, None
+    
+    # Normalize the job company name
+    company_normalized = normalize_company_name(company)
+    
+    # Try exact match first
+    exact_match = crm_df[crm_df['company_clean'] == company_normalized]
+    
+    if not exact_match.empty:
+        last_contact = exact_match.iloc[0]['Last Contacted']
+        return True, last_contact if pd.notna(last_contact) else None
+    
+    # Try partial match (company name contains or is contained)
+    for idx, row in crm_df.iterrows():
+        crm_name = row['company_clean']
+        
+        # Check if either name contains the other
+        if company_normalized in crm_name or crm_name in company_normalized:
+            # Make sure it's a meaningful match (not just a single word)
+            if len(company_normalized) > 3 and len(crm_name) > 3:
+                last_contact = row['Last Contacted']
+                return True, last_contact if pd.notna(last_contact) else None
+    
+    return False, None
+
 def extract_country(location):
     """Extract country from location"""
     location = str(location).strip()
@@ -420,6 +500,9 @@ if jobs_df.empty:
     st.warning("⏳ Keine Daten verfügbar. Bitte führen Sie zuerst den Scraper aus!")
     st.stop()
 
+# Load CRM data
+crm_df = load_crm_data()
+
 # Add columns (Jobs.ch → Switzerland, StepStone.de → Germany; else from location)
 def get_country(row):
     source = str(row.get('source', '')).strip().lower()
@@ -431,6 +514,18 @@ def get_country(row):
 
 jobs_df['Country'] = jobs_df.apply(get_country, axis=1)
 jobs_df['Revenue'] = jobs_df['company'].apply(estimate_revenue)
+
+# Add CRM columns
+print(f"📋 Checking {len(jobs_df)} companies against CRM database...")
+crm_results = jobs_df['company'].apply(lambda x: check_company_in_crm(x, crm_df))
+jobs_df['Company_in_CRM'] = crm_results.apply(lambda x: 'Ja' if x[0] else 'Nein')
+jobs_df['Last_Contacted'] = crm_results.apply(lambda x: x[1])
+
+# Format Last_Contacted for display
+jobs_df['Last_Contacted_Display'] = jobs_df['Last_Contacted'].apply(
+    lambda x: x.strftime('%d.%m.%Y') if pd.notna(x) else '-'
+)
+
 jobs_df['Email_Draft'] = jobs_df.apply(
     lambda row: generate_german_email(row['company'], row['title'], row['Country'], row['Revenue']), 
     axis=1
@@ -462,6 +557,18 @@ country_filter = st.sidebar.selectbox("Land", all_countries)
 if country_filter != 'Alle Länder':
     jobs_filtered = jobs_filtered[jobs_filtered['Country'] == country_filter]
 
+# CRM filter
+st.sidebar.markdown("### 🗂️ CRM Filter")
+crm_filter = st.sidebar.selectbox(
+    "CRM Status",
+    ["Alle", "Nur in CRM", "Nur neue Prospects"]
+)
+
+if crm_filter == "Nur in CRM":
+    jobs_filtered = jobs_filtered[jobs_filtered['Company_in_CRM'] == 'Ja']
+elif crm_filter == "Nur neue Prospects":
+    jobs_filtered = jobs_filtered[jobs_filtered['Company_in_CRM'] == 'Nein']
+
 company_search = st.sidebar.text_input("Unternehmen suchen", "")
 if company_search:
     jobs_filtered = jobs_filtered[
@@ -474,6 +581,16 @@ st.sidebar.markdown("### 📊 Statistiken")
 st.sidebar.metric("Gesamt Jobs", len(jobs_df))
 st.sidebar.metric("Gefilterte Jobs", len(jobs_filtered))
 st.sidebar.metric("Unternehmen", jobs_filtered['company'].nunique())
+
+# CRM stats
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🗂️ CRM Status")
+in_crm_count = len(jobs_filtered[jobs_filtered['Company_in_CRM'] == 'Ja'])
+not_in_crm_count = len(jobs_filtered[jobs_filtered['Company_in_CRM'] == 'Nein'])
+crm_percentage = (in_crm_count / len(jobs_filtered) * 100) if len(jobs_filtered) > 0 else 0
+
+st.sidebar.metric("✅ In CRM", f"{in_crm_count} ({crm_percentage:.0f}%)")
+st.sidebar.metric("🆕 Neue Prospects", not_in_crm_count)
 
 # Main content
 st.title("📋 Alle Treasury Jobs - DACH-Region")
@@ -499,7 +616,7 @@ with col4:
 st.markdown("---")
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["📋 Alle Jobs", "📊 Statistiken", "📧 E-Mail-Entwürfe"])
+tab1, tab2, tab3, tab4 = st.tabs(["📋 Alle Jobs", "📊 Statistiken", "🗂️ CRM Analyse", "📧 E-Mail-Entwürfe"])
 
 with tab1:
     st.header("Vollständige Jobliste")
@@ -535,20 +652,29 @@ with tab1:
         display_df = display_df.sort_values('revenue_numeric', ascending=False)
         display_df = display_df.drop('revenue_numeric', axis=1)
     
-    # Table without Location column
+    # Table with CRM columns added
     table_df = display_df[[
-        'company', 'title', 'Country', 'Revenue', 'source', 
-        'date_scraped', 'technologies'
+        'company', 'title', 'Country', 'Revenue', 'Company_in_CRM', 
+        'Last_Contacted_Display', 'source', 'date_scraped', 'technologies'
     ]].copy()
     
     table_df['date_scraped'] = table_df['date_scraped'].dt.strftime('%Y-%m-%d')
     
     table_df.columns = [
-        'Unternehmen', 'Job-Titel', 'Land', 'Umsatz', 
-        'Quelle', 'Datum', 'Technologien'
+        'Unternehmen', 'Job-Titel', 'Land', 'Umsatz', 'In CRM', 
+        'Letzter Kontakt', 'Quelle', 'Datum', 'Technologien'
     ]
     
-    st.dataframe(table_df, use_container_width=True, height=600)
+    # Color code CRM status
+    def highlight_crm(row):
+        if row['In CRM'] == 'Ja':
+            return ['background-color: #d4edda'] * len(row)  # Light green
+        else:
+            return ['background-color: #fff3cd'] * len(row)  # Light yellow
+    
+    styled_df = table_df.style.apply(highlight_crm, axis=1)
+    
+    st.dataframe(styled_df, use_container_width=True, height=600)
     
     csv = table_df.to_csv(index=False)
     st.download_button(
@@ -652,6 +778,159 @@ with tab2:
     st.plotly_chart(fig, use_container_width=True)
 
 with tab3:
+    st.header("CRM Analyse")
+    
+    st.markdown("""
+    Diese Analyse zeigt, welche Unternehmen bereits in Ihrem CRM-System vorhanden sind 
+    und wann sie zuletzt kontaktiert wurden.
+    """)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        total_companies = jobs_filtered['company'].nunique()
+        st.metric("📊 Unternehmen Gesamt", total_companies)
+    
+    with col2:
+        in_crm = jobs_filtered[jobs_filtered['Company_in_CRM'] == 'Ja']['company'].nunique()
+        in_crm_pct = (in_crm / total_companies * 100) if total_companies > 0 else 0
+        st.metric("✅ In CRM", f"{in_crm} ({in_crm_pct:.0f}%)")
+    
+    with col3:
+        new_prospects = jobs_filtered[jobs_filtered['Company_in_CRM'] == 'Nein']['company'].nunique()
+        st.metric("🆕 Neue Prospects", new_prospects)
+    
+    st.markdown("---")
+    
+    # CRM Status Breakdown
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("CRM Status Verteilung")
+        
+        crm_status = jobs_filtered.groupby('Company_in_CRM')['company'].nunique()
+        
+        fig = px.pie(
+            values=crm_status.values,
+            names=['In CRM' if x == 'Ja' else 'Neue Prospects' for x in crm_status.index],
+            color_discrete_sequence=['#2d7a3e', '#ffa502']
+        )
+        fig.update_layout(height=400)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("Letzter Kontakt (für CRM-Firmen)")
+        
+        # Filter only companies in CRM with contact date
+        crm_companies = jobs_filtered[
+            (jobs_filtered['Company_in_CRM'] == 'Ja') & 
+            (jobs_filtered['Last_Contacted'].notna())
+        ].copy()
+        
+        if len(crm_companies) > 0:
+            # Calculate days since last contact
+            crm_companies['Days_Since_Contact'] = (
+                datetime.now() - crm_companies['Last_Contacted']
+            ).dt.days
+            
+            # Categorize
+            def categorize_contact(days):
+                if days <= 30:
+                    return '< 1 Monat'
+                elif days <= 90:
+                    return '1-3 Monate'
+                elif days <= 180:
+                    return '3-6 Monate'
+                elif days <= 365:
+                    return '6-12 Monate'
+                else:
+                    return '> 1 Jahr'
+            
+            crm_companies['Contact_Category'] = crm_companies['Days_Since_Contact'].apply(categorize_contact)
+            
+            contact_dist = crm_companies.groupby('Contact_Category')['company'].nunique()
+            
+            # Order categories
+            category_order = ['< 1 Monat', '1-3 Monate', '3-6 Monate', '6-12 Monate', '> 1 Jahr']
+            contact_dist = contact_dist.reindex(category_order, fill_value=0)
+            
+            fig = px.bar(
+                x=contact_dist.values,
+                y=contact_dist.index,
+                orientation='h',
+                labels={'x': 'Anzahl Unternehmen', 'y': 'Zeitraum'},
+                color=contact_dist.values,
+                color_continuous_scale='Greens'
+            )
+            fig.update_layout(showlegend=False, height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Keine Kontaktdaten verfügbar")
+    
+    st.markdown("---")
+    
+    # New Prospects to Contact
+    st.subheader("🆕 Neue Prospects (nicht in CRM)")
+    
+    new_prospect_companies = jobs_filtered[
+        jobs_filtered['Company_in_CRM'] == 'Nein'
+    ].groupby('company').agg({
+        'title': 'count',
+        'Country': 'first',
+        'Revenue': 'first',
+        'date_scraped': 'max'
+    }).reset_index()
+    
+    new_prospect_companies.columns = ['Unternehmen', 'Anzahl Jobs', 'Land', 'Umsatz', 'Neueste Stelle']
+    new_prospect_companies = new_prospect_companies.sort_values('Anzahl Jobs', ascending=False)
+    new_prospect_companies['Neueste Stelle'] = pd.to_datetime(new_prospect_companies['Neueste Stelle']).dt.strftime('%Y-%m-%d')
+    
+    st.markdown(f"**{len(new_prospect_companies)} neue Unternehmen ohne CRM-Eintrag gefunden**")
+    st.dataframe(new_prospect_companies, use_container_width=True, height=400)
+    
+    # Companies in CRM that are hiring
+    st.markdown("---")
+    st.subheader("✅ Bekannte Unternehmen (in CRM) mit neuen Stellen")
+    
+    crm_hiring = jobs_filtered[
+        jobs_filtered['Company_in_CRM'] == 'Ja'
+    ].groupby('company').agg({
+        'title': 'count',
+        'Country': 'first',
+        'Revenue': 'first',
+        'Last_Contacted_Display': 'first',
+        'date_scraped': 'max'
+    }).reset_index()
+    
+    crm_hiring.columns = ['Unternehmen', 'Anzahl Jobs', 'Land', 'Umsatz', 'Letzter Kontakt', 'Neueste Stelle']
+    crm_hiring = crm_hiring.sort_values('Anzahl Jobs', ascending=False)
+    crm_hiring['Neueste Stelle'] = pd.to_datetime(crm_hiring['Neueste Stelle']).dt.strftime('%Y-%m-%d')
+    
+    st.markdown(f"**{len(crm_hiring)} bekannte Unternehmen mit aktiven Stellenausschreibungen**")
+    st.dataframe(crm_hiring, use_container_width=True, height=400)
+    
+    # Export buttons
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        csv_new = new_prospect_companies.to_csv(index=False)
+        st.download_button(
+            "📥 Neue Prospects als CSV",
+            csv_new,
+            f"neue_prospects_{datetime.now().strftime('%Y%m%d')}.csv",
+            "text/csv"
+        )
+    
+    with col2:
+        csv_crm = crm_hiring.to_csv(index=False)
+        st.download_button(
+            "📥 CRM-Unternehmen als CSV",
+            csv_crm,
+            f"crm_unternehmen_{datetime.now().strftime('%Y%m%d')}.csv",
+            "text/csv"
+        )
+
+with tab4:
     st.header("E-Mail-Entwürfe (Deutsch)")
     
     st.markdown("""
