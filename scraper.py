@@ -467,15 +467,18 @@ class TreasuryWebScraper:
             print("⚠️  No jobs to save!")
             return
 
+        # Company names to exclude (Unknown or misparsed UI labels)
+        invalid_companies = {"unknown", "place of work", "last month", "yesterday"}
+
         df = pd.DataFrame(self.jobs)
 
-        # Exclude jobs with company "Unknown" (they are not written to CSV)
         if "company" in df.columns:
-            before_unknown = len(df)
-            df = df[df["company"].fillna("").astype(str).str.strip().str.lower() != "unknown"]
-            dropped_unknown = before_unknown - len(df)
-            if dropped_unknown:
-                print(f"\n🗑️  Excluded {dropped_unknown} job(s) with company 'Unknown'")
+            before_drop = len(df)
+            company_clean = df["company"].fillna("").astype(str).str.strip().str.lower()
+            df = df[~company_clean.isin(invalid_companies)]
+            dropped = before_drop - len(df)
+            if dropped:
+                print(f"\n🗑️  Excluded {dropped} job(s) with invalid company name (Unknown, Place of work, Last month, Yesterday)")
 
         print("\n🔍 Detecting technologies...")
         df["technologies"] = df["title"].apply(lambda x: ", ".join(self.detect_technologies(x)))
@@ -489,15 +492,14 @@ class TreasuryWebScraper:
             existing_df = pd.read_csv(filename)
             print(f"   Current database: {len(existing_df)} jobs")
 
-            # Remove existing rows with company "Unknown" from the CSV
+            # Remove existing rows with invalid company names from the CSV
             if "company" in existing_df.columns:
-                before_unknown = len(existing_df)
-                existing_df = existing_df[
-                    existing_df["company"].fillna("").astype(str).str.strip().str.lower() != "unknown"
-                ]
-                removed_unknown = before_unknown - len(existing_df)
-                if removed_unknown:
-                    print(f"   Removed {removed_unknown} existing row(s) with company 'Unknown'")
+                before_drop = len(existing_df)
+                company_clean = existing_df["company"].fillna("").astype(str).str.strip().str.lower()
+                existing_df = existing_df[~company_clean.isin(invalid_companies)]
+                removed = before_drop - len(existing_df)
+                if removed:
+                    print(f"   Removed {removed} existing row(s) with invalid company name")
 
             combined_df = pd.concat([existing_df, df], ignore_index=True)
 
