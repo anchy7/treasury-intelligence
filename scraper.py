@@ -227,7 +227,7 @@ class TreasuryWebScraper:
                         continue
 
                 # Enrich missing companies from detail pages (JSON-LD preferred)
-                batch = self._enrich_jobs_ch_from_detail_pages(batch, max_pages=8)
+                batch = self._enrich_jobs_ch_from_detail_pages(batch, max_pages=20)
 
                 # Append to global list
                 self.jobs.extend(batch)
