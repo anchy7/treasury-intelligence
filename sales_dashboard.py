@@ -425,7 +425,7 @@ def get_country(row):
     source = str(row.get('source', '')).strip().lower()
     if 'jobs.ch' in source or 'jobs_ch' in source:
         return 'Switzerland'
-    if 'stepstone' in source:
+    if 'StepStone.de' in source:
         return 'Germany'
     return extract_country(row.get('location', ''))
 
