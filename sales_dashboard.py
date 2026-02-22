@@ -679,18 +679,8 @@ with tab1:
         'Unternehmen', 'Job-Titel', 'Land', 'Umsatz', 'In CRM', 
         'Letzter Kontakt', 'Quelle', 'Datum', 'Technologien'
     ]
-    
-    # Color code CRM status
-    def highlight_crm(row):
-        if row['In CRM'] == 'Ja':
-            return ['background-color: #d4edda'] * len(row)  # Light green
-        else:
-            return ['background-color: #fff3cd'] * len(row)  # Light yellow
-    
-    styled_df = table_df.style.apply(highlight_crm, axis=1)
-    
-    st.dataframe(styled_df, use_container_width=True, height=600)
-    
+    # No styling/colors for the full jobs list table
+    st.dataframe(table_df, use_container_width=True, height=600)
     csv = table_df.to_csv(index=False)
     st.download_button(
         "📥 Als CSV herunterladen",
