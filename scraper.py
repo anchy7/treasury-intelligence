@@ -1,88 +1,47 @@
 """
 Web Scraper for StepStone.de and Jobs.ch
-Runs daily via GitHub Actions
+Runs daily via GitHub Actions (or locally)
 
-Key fix:
-- Jobs.ch: collect detail links from search results, open each detail page,
-  parse JSON-LD JobPosting to reliably get title/company/location/country.
+Key improvements vs. your earlier version:
+- StepStone: uses stable query parameters (what/where) + URL encoding
+- Jobs.ch: extracts from job links + tries multiple company selectors
+- Jobs.ch fallback: opens a few detail pages to fetch company/location if still Unknown
+- Uses Selenium Manager (no webdriver-manager)
+- Dedupes by URL (most reliable)
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Optional
+from urllib.parse import quote_plus
 
 import pandas as pd
 from bs4 import BeautifulSoup
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
 
 
-# ----------------------------
-# Small helpers
-# ----------------------------
+@dataclass
+class Job:
+    date_scraped: str
+    source: str
+    company: str
+    title: str
+    location: str
+    url: str
+    technologies: str = ""
 
-def now_date() -> str:
-    return datetime.now().strftime("%Y-%m-%d")
-
-
-def clean_ws(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "")).strip()
-
-
-def clean_company(company: str) -> str:
-    company = clean_ws(company)
-
-    # remove bracket noise
-    company = re.sub(r"\s*\(.*?\)\s*", " ", company).strip()
-
-    # normalize suffixes (optional)
-    company = re.sub(
-        r"\s+(GmbH|AG|SE|KGaA|Ltd|Inc|Corp|SA)\.?$",
-        "",
-        company,
-        flags=re.IGNORECASE,
-    ).strip()
-
-    return company if company else "Unknown"
-
-
-def detect_technologies(title: str) -> str:
-    tech: List[str] = []
-    t = (title or "").lower()
-
-    if re.search(r"s[/]?4\s?hana|s4hana", t):
-        tech.append("SAP S/4HANA")
-    if "kyriba" in t:
-        tech.append("Kyriba")
-    if re.search(r"\bpython\b", t):
-        tech.append("Python")
-    if re.search(r"\bapi\b", t):
-        tech.append("API")
-    if "swift" in t:
-        tech.append("SWIFT")
-    if "power bi" in t or "powerbi" in t:
-        tech.append("Power BI")
-
-    return ", ".join(tech)
-
-
-def polite_sleep(seconds: float) -> None:
-    time.sleep(seconds)
-
-
-# ----------------------------
-# Scraper
-# ----------------------------
 
 class TreasuryWebScraper:
-    def __init__(self) -> None:
+    def __init__(self):
         print("🚀 Initializing web scraper...")
 
         chrome_options = Options()
@@ -91,23 +50,24 @@ class TreasuryWebScraper:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
+
+        # A realistic modern UA (keep it consistent across runs)
         chrome_options.add_argument(
             "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
         )
 
-        # webdriver-manager ensures matching chromedriver in GitHub Actions
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Selenium Manager resolves driver/browser
+        self.driver = webdriver.Chrome(options=chrome_options)
+        self.wait = WebDriverWait(self.driver, 15)
 
-        self.jobs: List[Dict[str, Any]] = []
+        self.jobs: list[dict] = []
         print("✅ Web scraper ready\n")
 
-    # ----------------------------
-    # StepStone.de
-    # ----------------------------
-
-    def scrape_stepstone_de(self) -> None:
+    # ---------------------------
+    # STEPSTONE
+    # ---------------------------
+    def scrape_stepstone_de(self):
         """Scrape StepStone.de for treasury jobs"""
         print("=" * 60)
         print("📊 SCRAPING STEPSTONE.DE")
@@ -124,91 +84,96 @@ class TreasuryWebScraper:
             print(f"\n🔍 Searching: '{keyword}' in {location}")
 
             try:
-                keyword_clean = keyword.replace(" ", "-").lower()
-                url = f"https://www.stepstone.de/jobs/{keyword_clean}?location={location}"
+                # Stable params
+                url = (
+                    "https://www.stepstone.de/jobs?"
+                    f"what={quote_plus(keyword)}&where={quote_plus(location)}"
+                )
                 print(f"   URL: {url}")
 
                 self.driver.get(url)
-                polite_sleep(4)
-
-                # scroll once to load more
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                polite_sleep(2)
+                self._wait_for_html()
 
                 soup = BeautifulSoup(self.driver.page_source, "html.parser")
-
-                job_cards = soup.find_all("article", {"data-at": "job-item"})
+                job_cards = soup.select("article[data-at='job-item']")
                 if not job_cards:
-                    job_cards = soup.find_all("article")
+                    job_cards = soup.find_all("article", class_=re.compile("job", re.IGNORECASE))
 
                 print(f"   Found {len(job_cards)} job cards")
 
                 added = 0
                 for card in job_cards[:20]:
-                    title = self._stepstone_extract_title(card)
-                    company = self._stepstone_extract_company(card)
-                    loc = self._stepstone_extract_location(card) or location
-                    job_url = self._stepstone_extract_url(card)
-
-                    if title != "Unknown" and company != "Unknown":
-                        self.jobs.append(
-                            {
-                                "date_scraped": now_date(),
-                                "source": "StepStone.de",
-                                "company": clean_company(company),
-                                "title": clean_ws(title),
-                                "location": clean_ws(loc),
-                                "country": "Germany",
-                                "url": job_url,
-                            }
+                    try:
+                        title_elem = (
+                            card.select_one('[data-at="job-item-title"]')
+                            or card.find("h2")
+                            or card.find("a", class_=re.compile("title", re.IGNORECASE))
                         )
-                        added += 1
-                        print(f"   ✅ {company} - {title[:55]}")
+                        title = title_elem.get_text(strip=True) if title_elem else "Unknown"
 
-                print(f"   ➕ Added: {added}")
-                polite_sleep(2)
+                        company_elem = (
+                            card.select_one('[data-at="job-item-company-name"]')
+                            or card.find("span", class_=re.compile("company", re.IGNORECASE))
+                        )
+                        company = company_elem.get_text(strip=True) if company_elem else "Unknown"
+                        company = self._clean_company(company)
+
+                        location_elem = (
+                            card.select_one('[data-at="job-item-location"]')
+                            or card.find("span", class_=re.compile("location", re.IGNORECASE))
+                        )
+                        job_location = location_elem.get_text(strip=True) if location_elem else location
+
+                        link_elem = card.find("a", href=True)
+                        job_url = ""
+                        if link_elem:
+                            href = link_elem["href"]
+                            job_url = href if href.startswith("http") else f"https://www.stepstone.de{href}"
+
+                        if title != "Unknown" and company != "Unknown" and job_url:
+                            self.jobs.append(
+                                {
+                                    "date_scraped": datetime.now().strftime("%Y-%m-%d"),
+                                    "source": "StepStone.de",
+                                    "company": company,
+                                    "title": title,
+                                    "location": job_location,
+                                    "url": job_url,
+                                }
+                            )
+                            added += 1
+                            if added <= 15:
+                                print(f"   ✅ [{added}] {company} - {title[:55]}")
+
+                    except Exception as e:
+                        print(f"   ⚠️  Error parsing job card: {str(e)[:120]}")
+                        continue
+
+                time.sleep(1)
 
             except Exception as e:
                 print(f"   ❌ Error scraping StepStone: {e}")
 
-        total = sum(1 for j in self.jobs if j.get("source") == "StepStone.de")
-        print(f"\n✅ StepStone Total: {total} jobs\n")
+        stepstone_count = len([j for j in self.jobs if j["source"] == "StepStone.de"])
+        print(f"\n✅ StepStone Total: {stepstone_count} jobs\n")
 
-    def _stepstone_extract_title(self, card: Any) -> str:
-        a = card.find("a", {"data-at": "job-item-title"})
-        if not a:
-            h2 = card.find("h2")
-            if h2:
-                a = h2
-        if not a:
-            a = card.find("a", href=True)
-        return clean_ws(a.get_text(" ", strip=True)) if a else "Unknown"
+    # ---------------------------
+    # JOBS.CH
+    # ---------------------------
+    def scrape_jobs_ch(self):
+        """
+        Scrape Jobs.ch for Swiss treasury jobs.
 
-    def _stepstone_extract_company(self, card: Any) -> str:
-        s = card.find("span", {"data-at": "job-item-company-name"})
-        if not s:
-            s = card.find("span", class_=re.compile("company", re.I))
-        return clean_ws(s.get_text(" ", strip=True)) if s else "Unknown"
+        Why company was "Unknown" before:
+        - list pages often don't contain "at Company" text
+        - company sits in specific spans/divs and your regex didn't hit
+        - sometimes company is only reliable on detail pages
 
-    def _stepstone_extract_location(self, card: Any) -> str:
-        s = card.find("span", {"data-at": "job-item-location"})
-        if not s:
-            s = card.find("span", class_=re.compile("location", re.I))
-        return clean_ws(s.get_text(" ", strip=True)) if s else ""
-
-    def _stepstone_extract_url(self, card: Any) -> str:
-        link = card.find("a", href=True)
-        if not link:
-            return ""
-        href = link["href"]
-        return href if href.startswith("http") else f"https://www.stepstone.de{href}"
-
-    # ----------------------------
-    # Jobs.ch (Switzerland)
-    # ----------------------------
-
-    def scrape_jobs_ch(self) -> None:
-        """Scrape Jobs.ch for Swiss treasury jobs via detail pages + JSON-LD"""
+        This version:
+        - extracts job URLs from list page
+        - tries multiple selectors for company/location in the list item
+        - falls back to opening a limited number of detail pages to fill Unknowns
+        """
         print("=" * 60)
         print("📊 SCRAPING JOBS.CH (Switzerland)")
         print("=" * 60)
@@ -219,194 +184,279 @@ class TreasuryWebScraper:
             print(f"\n🔍 Searching: '{keyword}'")
 
             try:
-                term = keyword.replace(" ", "%20")
-                url = f"https://www.jobs.ch/en/vacancies/?term={term}"
+                url = f"https://www.jobs.ch/en/vacancies/?term={quote_plus(keyword)}"
                 print(f"   URL: {url}")
 
                 self.driver.get(url)
-                polite_sleep(4)
-
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                polite_sleep(2)
+                self._wait_for_html()
 
                 soup = BeautifulSoup(self.driver.page_source, "html.parser")
-                detail_links = self._jobs_ch_collect_detail_links(soup)
 
-                print(f"   Found {len(detail_links)} detail links")
+                # Link patterns tend to be more stable than card markup
+                links = soup.find_all(
+                    "a",
+                    href=re.compile(r"(/en/vacancies/|/vacancies/|/en/jobs/|/jobs/)", re.IGNORECASE),
+                )
+                print(f"   Found {len(links)} job links")
 
-                max_per_keyword = 12
                 added = 0
+                seen_urls: set[str] = set()
 
-                for job_url in detail_links[:max_per_keyword]:
-                    data = self._jobs_ch_parse_detail(job_url)
-                    if not data:
+                # Collect candidates from the list page first
+                candidates: list[dict] = []
+                for link in links:
+                    href = (link.get("href") or "").strip()
+                    if not href:
                         continue
 
-                    title = clean_ws(data.get("title", "Unknown"))
-                    company = clean_company(data.get("company", "Unknown"))
-                    location = clean_ws(data.get("location", "Switzerland"))
-                    country = clean_ws(data.get("country", "Switzerland"))
-
-                    if title == "Unknown" or len(title) < 4:
+                    # Basic noise filter: ignore obvious non-job links
+                    if any(x in href.lower() for x in ["privacy", "terms", "login", "register"]):
                         continue
 
-                    self.jobs.append(
+                    job_url = href if href.startswith("http") else f"https://www.jobs.ch{href}"
+
+                    if job_url in seen_urls:
+                        continue
+                    seen_urls.add(job_url)
+
+                    title = link.get_text(strip=True)
+                    if not title or len(title) < 6:
+                        continue
+
+                    parent = link.find_parent(["article", "li", "div", "section"]) or link.parent
+                    parent_soup = parent if parent else link
+
+                    company = self._extract_company_jobs_ch(parent_soup)
+                    job_location = self._extract_location_jobs_ch(parent_soup)
+
+                    candidates.append(
                         {
-                            "date_scraped": now_date(),
+                            "date_scraped": datetime.now().strftime("%Y-%m-%d"),
                             "source": "Jobs.ch",
                             "company": company,
                             "title": title,
-                            "location": location,
-                            "country": country,
+                            "location": job_location,
                             "url": job_url,
                         }
                     )
-                    added += 1
-                    print(f"   ✅ {company} - {title[:55]}")
-                    polite_sleep(1.5)
 
-                print(f"   ➕ Added: {added}")
-                polite_sleep(2)
+                    if len(candidates) >= 35:
+                        break
+
+                # Fallback: open detail pages for missing company/location (cap to keep runtime OK)
+                candidates = self._enrich_jobs_ch_from_detail_pages(candidates, max_details=12)
+
+                for c in candidates:
+                    self.jobs.append(c)
+                    added += 1
+                    if added <= 15:
+                        print(f"   ✅ [{added}] {c['company']} - {c['title'][:55]}")
+
+                print(f"   Added {added} Jobs.ch jobs")
+                time.sleep(1)
 
             except Exception as e:
                 print(f"   ❌ Error scraping Jobs.ch: {e}")
 
-        total = sum(1 for j in self.jobs if j.get("source") == "Jobs.ch")
-        print(f"\n✅ Jobs.ch Total: {total} jobs\n")
+        jobsch_count = len([j for j in self.jobs if j["source"] == "Jobs.ch"])
+        print(f"\n✅ Jobs.ch Total: {jobsch_count} jobs\n")
 
-    def _jobs_ch_collect_detail_links(self, soup: BeautifulSoup) -> List[str]:
+    # ---------------------------
+    # JOBS.CH helpers
+    # ---------------------------
+    def _extract_company_jobs_ch(self, node) -> str:
         """
-        Collect job detail links from results.
-        Common patterns:
-        - /en/vacancies/detail/<uuid>/
-        - /de/stellenangebote/detail/<uuid>/
+        Try many likely selectors/attributes for company on Jobs.ch list cards.
+        If none hit, return "Unknown".
         """
-        urls: Set[str] = set()
-        for a in soup.find_all("a", href=True):
-            href = a.get("href", "")
-            if not href:
-                continue
+        # 1) Try attribute-driven elements (data-cy is common on modern sites)
+        selectors = [
+            "[data-cy*=company]",
+            "[data-testid*=company]",
+            "[class*=company]",
+            "span[class*=Company]",
+            "div[class*=Company]",
+        ]
+        for sel in selectors:
+            el = node.select_one(sel) if hasattr(node, "select_one") else None
+            if el:
+                txt = el.get_text(" ", strip=True)
+                txt = self._clean_company(txt)
+                if txt and txt.lower() != "unknown":
+                    return txt
 
-            if re.search(r"^/en/vacancies/detail/[0-9a-f-]{10,}/?$", href, re.I):
-                urls.add(href if href.startswith("http") else f"https://www.jobs.ch{href}")
+        # 2) Try common tag/class regex
+        if hasattr(node, "find"):
+            el = node.find(["span", "div"], class_=re.compile(r"company|employer|firm", re.IGNORECASE))
+            if el:
+                txt = self._clean_company(el.get_text(" ", strip=True))
+                if txt and txt.lower() != "unknown":
+                    return txt
 
-            if re.search(r"^/de/stellenangebote/detail/[0-9a-f-]{10,}/?$", href, re.I):
-                urls.add(href if href.startswith("http") else f"https://www.jobs.ch{href}")
+        # 3) Fallback regex on surrounding text
+        text = node.get_text(" ", strip=True) if hasattr(node, "get_text") else ""
+        # Sometimes displayed like: "CompanyName • Zurich"
+        m = re.search(r"^(.+?)\s*[•|]\s*(Zurich|Zürich|Basel|Bern|Geneva|Genève|Lausanne|Zug|Luzern|Lucerne)\b", text)
+        if m:
+            return self._clean_company(m.group(1).strip())
 
-        return sorted(urls)
+        # Sometimes contains labels like "Company: X"
+        m = re.search(r"(?:Company|Firma|Unternehmen)\s*[:\-]\s*(.+?)(?:\s{2,}|•|\||$)", text, re.IGNORECASE)
+        if m:
+            return self._clean_company(m.group(1).strip())
 
-    def _jobs_ch_parse_detail(self, job_url: str) -> Optional[Dict[str, str]]:
-        """Open job detail page and parse JSON-LD JobPosting, fallback to HTML."""
-        try:
-            self.driver.get(job_url)
-            polite_sleep(3)
+        return "Unknown"
 
-            soup = BeautifulSoup(self.driver.page_source, "html.parser")
+    def _extract_location_jobs_ch(self, node) -> str:
+        """Best-effort location extraction from list card text."""
+        # 1) Try selector
+        selectors = [
+            "[data-cy*=location]",
+            "[data-testid*=location]",
+            "[class*=location]",
+        ]
+        for sel in selectors:
+            el = node.select_one(sel) if hasattr(node, "select_one") else None
+            if el:
+                txt = el.get_text(" ", strip=True)
+                if txt:
+                    return txt
 
-            # Best: JSON-LD JobPosting
-            data = self._extract_jobposting_jsonld(soup)
-            if data:
-                return data
+        # 2) Regex city guess
+        text = node.get_text(" ", strip=True) if hasattr(node, "get_text") else ""
+        swiss_cities = [
+            "Zürich", "Zurich", "Basel", "Bern", "Genève", "Geneva", "Lausanne",
+            "Zug", "Luzern", "Lucerne", "Winterthur", "St. Gallen", "St Gallen",
+        ]
+        for city in swiss_cities:
+            if city.lower() in text.lower():
+                return city
 
-            # Fallback HTML
-            title = "Unknown"
-            h1 = soup.find("h1")
-            if h1:
-                title = clean_ws(h1.get_text(" ", strip=True))
+        return "Switzerland"
 
-            company = "Unknown"
-            # try meta tags
-            og = soup.find("meta", {"property": "og:site_name"})
-            if og and og.get("content"):
-                # not always company, but keep as last resort
-                pass
+    def _enrich_jobs_ch_from_detail_pages(self, candidates: list[dict], max_details: int = 10) -> list[dict]:
+        """
+        For candidates with company/location Unknown, open the job detail page and try to extract.
+        Keeps the run time under control by limiting detail page fetches.
+        """
+        to_enrich = [c for c in candidates if (c.get("company") == "Unknown" or c.get("location") in ("Switzerland", "", None))]
+        if not to_enrich:
+            return candidates
 
-            # try something that looks like "Company" label nearby
-            text = soup.get_text("\n", strip=True)
-            m = re.search(r"\bCompany\b[:\s]+(.+)", text, re.I)
-            if m:
-                company = clean_ws(m.group(1))
+        # Only enrich a limited number (keep daily Actions quick)
+        to_enrich = to_enrich[:max_details]
 
-            # Swiss location heuristic: "8000 Zürich"
-            loc = "Switzerland"
-            m2 = re.search(r"\b(\d{4}\s+[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,})\b", text)
-            if m2:
-                loc = clean_ws(m2.group(1))
-
-            return {"title": title, "company": company, "location": loc, "country": "Switzerland"}
-
-        except Exception:
-            return None
-
-    def _extract_jobposting_jsonld(self, soup: BeautifulSoup) -> Optional[Dict[str, str]]:
-        """Extract JobPosting from JSON-LD."""
-        scripts = soup.find_all("script", {"type": "application/ld+json"})
-        for s in scripts:
-            raw = (s.string or "").strip()
-            if not raw:
-                continue
-
+        for c in to_enrich:
             try:
-                payload = json.loads(raw)
+                self.driver.get(c["url"])
+                self._wait_for_html()
+
+                soup = BeautifulSoup(self.driver.page_source, "html.parser")
+
+                # Common patterns on detail pages:
+                # - Company in header area
+                # - Location near title
+                # We'll attempt broad but safe extraction.
+                title_text = self._safe_text(soup.select_one("h1")) or c["title"]
+
+                # Company attempts
+                company = c["company"]
+                company_candidates = [
+                    soup.select_one("[data-cy*=company]"),
+                    soup.select_one("[data-testid*=company]"),
+                    soup.select_one("[class*=company]"),
+                    soup.find(["span", "div"], class_=re.compile(r"company|employer|firm", re.IGNORECASE)),
+                ]
+                for el in company_candidates:
+                    txt = self._safe_text(el)
+                    txt = self._clean_company(txt)
+                    if txt and txt.lower() != "unknown" and len(txt) > 1:
+                        company = txt
+                        break
+
+                # Location attempts
+                location = c["location"]
+                loc_candidates = [
+                    soup.select_one("[data-cy*=location]"),
+                    soup.select_one("[data-testid*=location]"),
+                    soup.select_one("[class*=location]"),
+                    soup.find(["span", "div"], class_=re.compile(r"location|ort|place", re.IGNORECASE)),
+                ]
+                for el in loc_candidates:
+                    txt = self._safe_text(el)
+                    if txt and len(txt) > 1:
+                        location = txt
+                        break
+
+                c["title"] = title_text
+                c["company"] = company
+                c["location"] = location if location else c["location"]
+
+                time.sleep(0.5)
+
             except Exception:
+                # Don't fail the whole run because one detail page differs
                 continue
 
-            objs: List[Dict[str, Any]] = []
-            if isinstance(payload, dict):
-                objs = [payload]
-            elif isinstance(payload, list):
-                objs = [x for x in payload if isinstance(x, dict)]
+        return candidates
 
-            for obj in objs:
-                # sometimes nested in @graph
-                if obj.get("@type") != "JobPosting":
-                    g = obj.get("@graph")
-                    if isinstance(g, list):
-                        jp = next((x for x in g if isinstance(x, dict) and x.get("@type") == "JobPosting"), None)
-                        if jp:
-                            obj = jp
-                        else:
-                            continue
-                    else:
-                        continue
+    @staticmethod
+    def _safe_text(el) -> str:
+        if not el:
+            return ""
+        try:
+            return el.get_text(" ", strip=True)
+        except Exception:
+            return ""
 
-                title = clean_ws(obj.get("title", "")) or "Unknown"
+    # ---------------------------
+    # GENERAL helpers
+    # ---------------------------
+    def _wait_for_html(self):
+        # Wait until the HTML is non-trivial (works across many sites)
+        self.wait.until(lambda d: len(d.page_source) > 5000)
 
-                org = obj.get("hiringOrganization") or {}
-                company = "Unknown"
-                if isinstance(org, dict):
-                    company = clean_ws(org.get("name", "")) or "Unknown"
+    @staticmethod
+    def _clean_company(company: str) -> str:
+        company = re.sub(r"\s+", " ", (company or "")).strip()
 
-                location = "Switzerland"
-                country = "Switzerland"
+        # Remove common suffixes
+        company = re.sub(
+            r"\s+(GmbH|AG|SE|KGaA|Ltd|Inc|Corp|SA)\.?\s*$",
+            "",
+            company,
+            flags=re.IGNORECASE,
+        )
 
-                jl = obj.get("jobLocation")
-                if isinstance(jl, list) and jl:
-                    jl = jl[0]
-                if isinstance(jl, dict):
-                    addr = jl.get("address") or {}
-                    if isinstance(addr, dict):
-                        postal = clean_ws(str(addr.get("postalCode", "") or ""))
-                        locality = clean_ws(str(addr.get("addressLocality", "") or ""))
-                        region = clean_ws(str(addr.get("addressRegion", "") or ""))
-                        location = clean_ws(" ".join([x for x in [postal, locality, region] if x])) or "Switzerland"
+        # Remove bracketed notes
+        company = re.sub(r"\s*\(.*?\)\s*", "", company)
 
-                        ctry = addr.get("addressCountry") or ""
-                        if isinstance(ctry, dict):
-                            country = clean_ws(ctry.get("name", "")) or "Switzerland"
-                        else:
-                            country = clean_ws(str(ctry)) or "Switzerland"
+        # Remove "hiring now" style tails
+        company = re.sub(r"\s*(hiring now|we\'re hiring).*", "", company, flags=re.IGNORECASE)
 
-                return {"title": title, "company": company, "location": location, "country": country}
+        return company.strip() if company else "Unknown"
 
-        return None
+    @staticmethod
+    def detect_technologies(title: str) -> list[str]:
+        tech: list[str] = []
+        text = (title or "").lower()
 
-    # ----------------------------
-    # Save
-    # ----------------------------
+        if re.search(r"s[/]?4\s?hana|s4hana", text):
+            tech.append("SAP S/4HANA")
+        if "kyriba" in text:
+            tech.append("Kyriba")
+        if re.search(r"\bpython\b", text):
+            tech.append("Python")
+        if re.search(r"\bapi\b", text):
+            tech.append("API")
+        if "swift" in text:
+            tech.append("SWIFT")
+        if "power bi" in text or "powerbi" in text:
+            tech.append("Power BI")
 
-    def save_to_csv(self, filename: str = "treasury_jobs.csv") -> None:
-        """Save scraped jobs to CSV; merge with existing file; dedupe."""
+        return tech
+
+    def save_to_csv(self, filename: str = "treasury_jobs.csv"):
         print("=" * 60)
         print("💾 SAVING DATA")
         print("=" * 60)
@@ -417,43 +467,41 @@ class TreasuryWebScraper:
 
         df = pd.DataFrame(self.jobs)
 
-        # ensure required columns exist
-        for col in ["date_scraped", "source", "company", "title", "location", "country", "url"]:
-            if col not in df.columns:
-                df[col] = ""
-
         print("\n🔍 Detecting technologies...")
-        df["technologies"] = df["title"].apply(detect_technologies)
+        df["technologies"] = df["title"].apply(lambda x: ", ".join(self.detect_technologies(x)))
+
+        # Best unique key is the URL
+        if "url" not in df.columns:
+            df["url"] = ""
 
         if os.path.exists(filename):
             print(f"\n📂 Found existing file: {filename}")
             existing_df = pd.read_csv(filename)
             print(f"   Current database: {len(existing_df)} jobs")
 
-            combined = pd.concat([existing_df, df], ignore_index=True)
+            combined_df = pd.concat([existing_df, df], ignore_index=True)
 
-            before = len(combined)
-            combined.drop_duplicates(
-                subset=["source", "company", "title", "location", "country"],
-                keep="last",
-                inplace=True,
-            )
-            after = len(combined)
+            before_count = len(combined_df)
+            combined_df.drop_duplicates(subset=["url"], keep="last", inplace=True)
+            after_count = len(combined_df)
+            removed = before_count - after_count
 
-            combined.to_csv(filename, index=False)
+            combined_df.to_csv(filename, index=False)
 
             print(f"\n📊 Statistics:")
             print(f"   New jobs scraped: {len(df)}")
-            print(f"   Duplicates removed: {before - after}")
-            print(f"   Total in database: {after}")
+            print(f"   Duplicates removed: {removed}")
+            print(f"   Total in database: {after_count}")
+            print(f"   Net new jobs: {len(df) - removed}")
         else:
             print(f"\n📝 Creating new file: {filename}")
+            df.drop_duplicates(subset=["url"], keep="last", inplace=True)
             df.to_csv(filename, index=False)
             print(f"   Saved {len(df)} jobs")
 
         print("\n✅ Save complete!")
 
-    def close(self) -> None:
+    def close(self):
         try:
             self.driver.quit()
         except Exception:
@@ -461,7 +509,7 @@ class TreasuryWebScraper:
         print("\n🔒 Browser closed")
 
 
-def main() -> None:
+def main():
     print("\n" + "=" * 60)
     print("🏦 TREASURY WEB SCRAPER")
     print("=" * 60)
@@ -469,6 +517,7 @@ def main() -> None:
     print("=" * 60 + "\n")
 
     scraper = TreasuryWebScraper()
+
     try:
         scraper.scrape_stepstone_de()
         scraper.scrape_jobs_ch()
@@ -476,7 +525,7 @@ def main() -> None:
 
         print("\n" + "=" * 60)
         print("✅ WEB SCRAPING COMPLETE!")
-        print(f"📊 Total jobs collected (this run): {len(scraper.jobs)}")
+        print(f"📊 Total jobs collected this run: {len(scraper.jobs)}")
         print(f"⏰ Finished: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 60 + "\n")
 
@@ -484,6 +533,7 @@ def main() -> None:
         print(f"\n❌ Fatal error: {e}")
         import traceback
         traceback.print_exc()
+
     finally:
         scraper.close()
 
