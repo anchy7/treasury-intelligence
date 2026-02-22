@@ -5,6 +5,7 @@ Green color scheme | Revenue data (expanded) | German email drafts | No location
 
 import streamlit as st
 import pandas as pd
+import os
 import plotly.express as px
 from datetime import datetime, timedelta
 
@@ -24,40 +25,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-@st.cache_data(ttl=3600)
-def load_jobs():
-    """Load all jobs from GitHub"""
-    base_url = "https://raw.githubusercontent.com/anchy7/treasury-intelligence/main/"
-    
-    try:
-        df = pd.read_csv(base_url + "treasury_jobs.csv")
-        df['date_scraped'] = pd.to_datetime(df['date_scraped'])
-        return df
-    except Exception as e:
-        st.error(f"Error loading data: {e}")
-        return pd.DataFrame()
 
-@st.cache_data(ttl=3600)
-def load_crm_data():
-    """Load CRM companies data from GitHub"""
-    base_url = "https://raw.githubusercontent.com/anchy7/treasury-intelligence/main/"
-    
-    try:
-        # Load CRM data with semicolon separator
-        df = pd.read_csv(base_url + "crm_all_companies.csv", sep=';', encoding='utf-8')
-        
-        # Clean company names for matching
-        df['Company name'] = df['Company name'].str.strip()
-        df['company_clean'] = df['Company name'].str.lower().str.strip()
-        
-        # Parse dates - handle empty strings
-        df['Last Contacted'] = df['Last Contacted'].replace('', pd.NaT)
-        df['Last Contacted'] = pd.to_datetime(df['Last Contacted'], format='%d/%m/%Y %H:%M', errors='coerce')
-        
-        return df
-    except Exception as e:
-        st.warning(f"Could not load CRM data: {e}")
-        return pd.DataFrame()
 
 def normalize_company_name(company):
     """
@@ -86,6 +54,47 @@ def normalize_company_name(company):
     
     return company
 
+
+@st.cache_data(ttl=3600)
+def load_jobs():
+    """Load all jobs from GitHub"""
+    base_url = "https://raw.githubusercontent.com/anchy7/treasury-intelligence/main/"
+    
+    try:
+        df = pd.read_csv(base_url + "treasury_jobs.csv")
+        df['date_scraped'] = pd.to_datetime(df['date_scraped'])
+        return df
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=3600)
+def load_crm_data():
+    """Load CRM companies data from GitHub"""
+    base_url = "https://raw.githubusercontent.com/anchy7/treasury-intelligence/main/"
+    
+    try:
+        # Load CRM data (prefer local file when running in CI / container, fallback to GitHub)
+        local_path = "crm_all_companies.csv"
+        if os.path.exists(local_path):
+            df = pd.read_csv(local_path, sep=';', encoding='utf-8')
+        else:
+            df = pd.read_csv(base_url + "crm_all_companies.csv", sep=';', encoding='utf-8')
+        
+        # Clean company names for matching (robust against blanks/NaN)
+        df['Company name'] = df['Company name'].fillna('').astype(str).str.strip()
+        # Create a normalized version used for matching (removes suffixes, punctuation, etc.)
+        df['company_clean'] = df['Company name'].apply(normalize_company_name)
+
+        # Parse dates - handle empty strings
+        df['Last Contacted'] = df['Last Contacted'].replace('', pd.NaT)
+        df['Last Contacted'] = pd.to_datetime(df['Last Contacted'], format='%d/%m/%Y %H:%M', errors='coerce')
+        
+        return df
+    except Exception as e:
+        st.warning(f"Could not load CRM data: {e}")
+        return pd.DataFrame()
+
 def check_company_in_crm(company, crm_df):
     """
     Check if company exists in CRM and return last contacted date
@@ -96,6 +105,8 @@ def check_company_in_crm(company, crm_df):
     
     # Normalize the job company name
     company_normalized = normalize_company_name(company)
+    if not company_normalized:
+        return False, None
     
     # Try exact match first
     exact_match = crm_df[crm_df['company_clean'] == company_normalized]
@@ -106,8 +117,12 @@ def check_company_in_crm(company, crm_df):
     
     # Try partial match (company name contains or is contained)
     for idx, row in crm_df.iterrows():
-        crm_name = row['company_clean']
-        
+        crm_name = normalize_company_name(row.get('company_clean', ''))
+
+        # Skip empty values
+        if not company_normalized or not crm_name:
+            continue
+
         # Check if either name contains the other
         if company_normalized in crm_name or crm_name in company_normalized:
             # Make sure it's a meaningful match (not just a single word)
