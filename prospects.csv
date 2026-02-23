@@ -1,20 +1,13 @@
 company,score,tier,action,total_jobs,jobs_last_30_days,locations,signal_count,primary_signal,all_signals,first_seen,last_activity
 SAP,45,Tier 3: Qualified,📋 Marketing Funnel,3,3,2,0,None,,2026-02-19,2026-02-22
 Sopra Steria,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-19,2026-02-19
-cbs Corporate Business Solutions Unternehmensberatung,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Deloitte,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Head of Finance and Risk Banking,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Senior Avaloq Entwickler,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Manager - Consulting - SAP Finance - ERP Transformation,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 "Senior Manager, SAP Finance Consulting",30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Chief Executive Officer,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Giesecke+Devrient,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-02-22,2026-02-22
-Horváth,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Scheer Group,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-02-22,2026-02-22
-zeb,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-EY Deutschland,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-KPMG AG Wirtschaftsprüfungsgesellschaft,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Preyer,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
+cbs Corporate Business Solutions Unternehmensberatung,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-23,2026-02-23
+Deloitte,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-23,2026-02-23
 Graduate - Business Intelligence / Market Risk Management,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Junior Supply Chain Manager Distribution,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Regional Finance Business Partner,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
@@ -26,9 +19,16 @@ Fachspezialist/-in Finanzen und Konsolidierung 80 – 100 %,25,Tier 4: Monitor,�
 Leiter/in Finanzen 80 - 100 %,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Finanzcontroller 60-100 %,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Leitung Finanzen & Risikocontrolling,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
+Giesecke+Devrient,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-02-23,2026-02-23
+Horváth,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-23,2026-02-23
+Scheer Group,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-02-23,2026-02-23
+zeb,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-23,2026-02-23
+EY Deutschland,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-23,2026-02-23
+KPMG AG Wirtschaftsprüfungsgesellschaft,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-23,2026-02-23
+Preyer,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-23,2026-02-23
 UBS,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-16,2026-02-16
 PwC,20,Tier 4: Monitor,👀 Database Only,2,2,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-02-16,2026-02-16
 Steck Human Resources Management,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-19,2026-02-19
 Sensirion,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-21,2026-02-22
 Keystone Recruitment,20,Tier 4: Monitor,👀 Database Only,3,3,1,0,None,,2026-02-22,2026-02-22
-Würth Management,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-22,2026-02-22
+Ronal,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-23,2026-02-23
