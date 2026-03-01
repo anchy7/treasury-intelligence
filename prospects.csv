@@ -1,13 +1,13 @@
 company,score,tier,action,total_jobs,jobs_last_30_days,locations,signal_count,primary_signal,all_signals,first_seen,last_activity
-SAP,45,Tier 3: Qualified,📋 Marketing Funnel,3,3,2,0,None,,2026-02-22,2026-02-27
+SAP,45,Tier 3: Qualified,📋 Marketing Funnel,3,3,2,0,None,,2026-02-22,2026-03-01
 Head of Finance and Risk Banking,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Senior Avaloq Entwickler,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Manager - Consulting - SAP Finance - ERP Transformation,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 "Senior Manager, SAP Finance Consulting",30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Chief Executive Officer,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-cbs Corporate Business Solutions Unternehmensberatung,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-27,2026-02-27
-Sopra Steria,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-27,2026-02-27
-Deloitte,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-27,2026-02-27
+cbs Corporate Business Solutions Unternehmensberatung,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
+Sopra Steria,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
+Deloitte,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
 Graduate - Business Intelligence / Market Risk Management,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Junior Supply Chain Manager Distribution,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Regional Finance Business Partner,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
@@ -18,20 +18,20 @@ Leiter/in Finanzen 80 - 100 %,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None
 Finanzcontroller 60-100 %,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 Leitung Finanzen & Risikocontrolling,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
 zeb,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-23,2026-02-23
-BEW Berliner Energie und Wärme,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-27,2026-02-27
-Giesecke+Devrient,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-02-27,2026-02-27
-Horváth,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-27,2026-02-27
-Senacor Technologies,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-27,2026-02-27
-Scheer Group,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-02-27,2026-02-27
-Preyer,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-27,2026-02-27
-EY Deutschland,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-27,2026-02-27
-KPMG AG Wirtschaftsprüfungsgesellschaft,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-27,2026-02-27
+BEW Berliner Energie und Wärme,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
+Giesecke+Devrient,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-03-01,2026-03-01
+Horváth,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
+Scheer Group,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-03-01,2026-03-01
+Senacor Technologies,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
+Preyer,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
+EY Deutschland,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
+KPMG AG Wirtschaftsprüfungsgesellschaft,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
 UBS,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-16,2026-02-16
 PwC,20,Tier 4: Monitor,👀 Database Only,2,2,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-02-16,2026-02-16
 Steck Human Resources Management,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-19,2026-02-19
 Keystone Recruitment,20,Tier 4: Monitor,👀 Database Only,3,3,1,0,None,,2026-02-22,2026-02-22
-Sensirion,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-22,2026-02-27
-Calida,20,Tier 4: Monitor,👀 Database Only,2,2,1,0,None,,2026-02-27,2026-02-28
-Ronal,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-28,2026-02-28
-Ringier,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-28,2026-02-28
-Marquard Family Office,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-28,2026-02-28
+Sensirion,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-22,2026-03-01
+Calida,20,Tier 4: Monitor,👀 Database Only,2,2,1,0,None,,2026-02-27,2026-03-01
+Ronal,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-03-01,2026-03-01
+Ringier,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-03-01,2026-03-01
+Marquard Family Office,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-03-01,2026-03-01
