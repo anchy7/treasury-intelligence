@@ -1,6 +1,13 @@
 """
-All Jobs Dashboard - V3
-Green color scheme | Revenue data (expanded) | German email drafts | No location column
+All Jobs Dashboard - V4
+Green color scheme | Revenue data (expanded) | German email drafts | CRM integration
+Data sources: 6 job sites + LinkedIn emails (7 total)
+
+Sources:
+- Germany: StepStone.de, Indeed.de
+- Switzerland: Jobs.ch, JobScout24.ch, StepStone.ch
+- Austria: Karriere.at
+- LinkedIn: Email alerts
 """
 
 import streamlit as st
@@ -620,6 +627,39 @@ crm_percentage = (in_crm_count / len(jobs_filtered) * 100) if len(jobs_filtered)
 st.sidebar.metric("✅ In CRM", f"{in_crm_count} ({crm_percentage:.0f}%)")
 st.sidebar.metric("🆕 Neue Prospects", not_in_crm_count)
 
+# Source breakdown stats
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📊 Datenquellen")
+
+# Count jobs by source
+source_counts = jobs_filtered['source'].value_counts()
+
+# Germany sources
+st.sidebar.markdown("**🇩🇪 Deutschland:**")
+stepstone_de = source_counts.get('StepStone.de', 0)
+indeed_de = source_counts.get('Indeed.de', 0)
+st.sidebar.markdown(f"• StepStone.de: {stepstone_de}")
+st.sidebar.markdown(f"• Indeed.de: {indeed_de}")
+
+# Switzerland sources
+st.sidebar.markdown("**🇨🇭 Schweiz:**")
+jobs_ch = source_counts.get('Jobs.ch', 0)
+jobscout24 = source_counts.get('JobScout24.ch', 0)
+stepstone_ch = source_counts.get('StepStone.ch', 0)
+st.sidebar.markdown(f"• Jobs.ch: {jobs_ch}")
+st.sidebar.markdown(f"• JobScout24.ch: {jobscout24}")
+st.sidebar.markdown(f"• StepStone.ch: {stepstone_ch}")
+
+# Austria sources
+st.sidebar.markdown("**🇦🇹 Österreich:**")
+karriere_at = source_counts.get('Karriere.at', 0)
+st.sidebar.markdown(f"• Karriere.at: {karriere_at}")
+
+# LinkedIn
+st.sidebar.markdown("**💼 LinkedIn:**")
+linkedin = source_counts.get('LinkedIn', 0)
+st.sidebar.markdown(f"• E-Mail-Alerts: {linkedin}")
+
 # Main content
 st.title("📋 Alle Treasury Jobs - DACH-Region")
 st.markdown(f"*Vollständige Liste • Umsatzdaten • Deutsche E-Mail-Vorlagen*")
@@ -704,6 +744,77 @@ with tab1:
 
 with tab2:
     st.header("Arbeitsmarkt-Statistiken")
+    
+    # Add source breakdown at the top
+    st.subheader("📊 Jobs nach Datenquelle")
+    
+    source_counts = jobs_filtered['source'].value_counts()
+    
+    # Create grouped source data
+    source_data = {
+        'Quelle': [],
+        'Anzahl': [],
+        'Land': []
+    }
+    
+    # Germany
+    for source in ['StepStone.de', 'Indeed.de']:
+        if source in source_counts.index:
+            source_data['Quelle'].append(source)
+            source_data['Anzahl'].append(source_counts[source])
+            source_data['Land'].append('🇩🇪 Deutschland')
+    
+    # Switzerland
+    for source in ['Jobs.ch', 'JobScout24.ch', 'StepStone.ch']:
+        if source in source_counts.index:
+            source_data['Quelle'].append(source)
+            source_data['Anzahl'].append(source_counts[source])
+            source_data['Land'].append('🇨🇭 Schweiz')
+    
+    # Austria
+    if 'Karriere.at' in source_counts.index:
+        source_data['Quelle'].append('Karriere.at')
+        source_data['Anzahl'].append(source_counts['Karriere.at'])
+        source_data['Land'].append('🇦🇹 Österreich')
+    
+    # LinkedIn
+    if 'LinkedIn' in source_counts.index:
+        source_data['Quelle'].append('LinkedIn')
+        source_data['Anzahl'].append(source_counts['LinkedIn'])
+        source_data['Land'].append('💼 LinkedIn')
+    
+    source_df = pd.DataFrame(source_data)
+    
+    if not source_df.empty:
+        fig = px.bar(
+            source_df,
+            x='Anzahl',
+            y='Quelle',
+            color='Land',
+            orientation='h',
+            labels={'Anzahl': 'Anzahl Jobs', 'Quelle': 'Datenquelle'},
+            color_discrete_map={
+                '🇩🇪 Deutschland': '#2d7a3e',
+                '🇨🇭 Schweiz': '#3a9d4f',
+                '🇦🇹 Österreich': '#4db85f',
+                '💼 LinkedIn': '#6fcc7f'
+            }
+        )
+        fig.update_layout(height=400, showlegend=True)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Summary text
+        total_scraped = source_counts.drop('LinkedIn', errors='ignore').sum()
+        linkedin_count = source_counts.get('LinkedIn', 0)
+        
+        st.markdown(f"""
+        **Zusammenfassung:**
+        - 🌐 Web-Scraping: {total_scraped} Jobs (6 Quellen)
+        - 💼 LinkedIn E-Mail-Alerts: {linkedin_count} Jobs
+        - 📊 Gesamt: {len(jobs_filtered)} Jobs
+        """)
+    
+    st.markdown("---")
     
     col1, col2 = st.columns(2)
     
