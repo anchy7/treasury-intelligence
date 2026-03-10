@@ -49,17 +49,30 @@ class TreasuryWebScraper:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
+        
+        # Anti-detection measures
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins-discovery")
+        chrome_options.add_argument("--start-maximized")
 
-        # A realistic modern UA (keep it consistent across runs)
+        # Realistic modern user agent
         chrome_options.add_argument(
-            "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
 
-        # Selenium Manager resolves driver/browser
         self.driver = webdriver.Chrome(options=chrome_options)
+        
+        # Hide webdriver property
+        self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        })
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
         self.wait = WebDriverWait(self.driver, 15)
-
         self.jobs: list[dict] = []
         print("✅ Web scraper ready\n")
 
@@ -77,6 +90,11 @@ class TreasuryWebScraper:
             ("Cash Manager", "Deutschland"),
             ("Treasury", "München"),
             ("Liquidity", "Frankfurt"),
+            ("Kyriba", "Deutschland"),
+            ("SAP Treasury", "Deutschland"),
+            ("FIS Treasury", "Deutschland"),
+            ("ION Treasury", "Deutschland"),
+            ("Nomentia", "Deutschland"),
         ]
 
         for keyword, location in searches:
