@@ -443,7 +443,7 @@ class TreasuryWebScraper:
         tech: list[str] = []
         text = (title or "").lower()
 
-        if re.search(r"s[/]?4\s?hana|s4hana", text):
+        if "SAP" in text:
             tech.append("SAP")
         if "kyriba" in text:
             tech.append("Kyriba")
