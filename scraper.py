@@ -182,30 +182,83 @@ class TreasuryWebScraper:
                 self._wait_for_html()
 
                 soup = BeautifulSoup(self.driver.page_source, "html.parser")
-                job_cards = soup.find_all("div", class_="job_seen_beacon")
+                
+                # Try multiple selectors - Indeed changes these frequently
+                job_cards = (
+                    soup.find_all("div", class_="job_seen_beacon") or
+                    soup.find_all("div", class_=re.compile(r"job.*card", re.IGNORECASE)) or
+                    soup.find_all("div", class_=re.compile(r"result", re.IGNORECASE)) or
+                    soup.find_all("a", class_=re.compile(r"jcs.*JobCard", re.IGNORECASE)) or
+                    soup.find_all("li", class_=re.compile(r"job", re.IGNORECASE))
+                )
 
                 print(f"   Found {len(job_cards)} job cards")
+                
+                # Debug: If no jobs found, print HTML snippet for diagnosis
+                if len(job_cards) == 0:
+                    print(f"   ⚠️  No job cards found. Page may have changed.")
+                    print(f"   ⚠️  Page size: {len(self.driver.page_source)} bytes")
+                    # Print first few div classes to help debug
+                    all_divs = soup.find_all("div", limit=10)
+                    if all_divs:
+                        print(f"   ⚠️  Sample classes found: {[d.get('class', []) for d in all_divs[:5]]}")
 
                 added = 0
-                for card in job_cards[:20]:
+                for card in job_cards[:30]:  # Increased to 30 to get more results
                     try:
-                        title_elem = card.find("h2", class_="jobTitle")
-                        company_elem = card.find("span", {"data-testid": "company-name"})
-                        location_elem = card.find("div", {"data-testid": "text-location"})
+                        # Try multiple patterns for title
+                        title_elem = (
+                            card.find("h2", class_="jobTitle") or
+                            card.find("h2", class_=re.compile(r"jobTitle", re.IGNORECASE)) or
+                            card.find("a", class_=re.compile(r"jobTitle", re.IGNORECASE)) or
+                            card.find("span", class_=re.compile(r"jobTitle", re.IGNORECASE)) or
+                            card.find("h2")
+                        )
+                        
+                        # Try multiple patterns for company
+                        company_elem = (
+                            card.find("span", {"data-testid": "company-name"}) or
+                            card.find("span", class_=re.compile(r"company", re.IGNORECASE)) or
+                            card.find("div", class_=re.compile(r"company", re.IGNORECASE))
+                        )
+                        
+                        # Try multiple patterns for location
+                        location_elem = (
+                            card.find("div", {"data-testid": "text-location"}) or
+                            card.find("div", class_=re.compile(r"location", re.IGNORECASE)) or
+                            card.find("span", class_=re.compile(r"location", re.IGNORECASE))
+                        )
 
                         if title_elem:
-                            title_link = title_elem.find("a") or title_elem.find("span")
+                            # Extract title
+                            title_link = title_elem.find("a") or title_elem.find("span") or title_elem
                             title = title_link.get_text(strip=True) if title_link else "Unknown"
+                            
+                            # Skip if title is too short (likely noise)
+                            if len(title) < 5:
+                                continue
 
+                            # Extract company
                             company = company_elem.get_text(strip=True) if company_elem else "Unknown"
                             company = self._clean_company(company)
 
+                            # Extract location
                             job_location = location_elem.get_text(strip=True) if location_elem else location
 
-                            job_link = title_elem.find("a")
+                            # Get URL - try multiple patterns
+                            job_link = (
+                                card.find("a", href=re.compile(r"/rc/clk\?|/viewjob\?|/pagead/clk\?")) or
+                                title_elem.find("a") or
+                                card.find("a", href=True)
+                            )
+                            
                             job_url = ""
                             if job_link and "href" in job_link.attrs:
-                                job_url = f"https://de.indeed.com{job_link['href']}"
+                                href = job_link['href']
+                                if href.startswith('http'):
+                                    job_url = href
+                                elif href.startswith('/'):
+                                    job_url = f"https://de.indeed.com{href}"
 
                             if title != "Unknown" and company != "Unknown" and job_url:
                                 self.jobs.append(
@@ -223,7 +276,7 @@ class TreasuryWebScraper:
                                     print(f"   ✅ [{added}] {company} - {title[:55]}")
 
                     except Exception as e:
-                        print(f"   ⚠️  Error parsing job card: {str(e)[:120]}")
+                        # Silently continue on individual job parse errors
                         continue
 
                 time.sleep(2)
