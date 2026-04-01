@@ -1,46 +1,28 @@
 company,score,tier,action,total_jobs,jobs_last_30_days,locations,signal_count,primary_signal,all_signals,first_seen,last_activity
-SAP,45,Tier 3: Qualified,📋 Marketing Funnel,3,3,2,0,None,,2026-02-22,2026-03-15
-Head of Finance and Risk Banking,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Senior Avaloq Entwickler,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Manager - Consulting - SAP Finance - ERP Transformation,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-"Senior Manager, SAP Finance Consulting",30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Chief Executive Officer,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Camenzind Human Resources,30,Tier 4: Monitor,👀 Database Only,5,5,2,0,None,,2026-02-22,2026-03-16
+SAP,35,Tier 4: Monitor,👀 Database Only,3,1,2,0,None,,2026-02-22,2026-03-15
 Sopra Steria,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-10,2026-03-10
 cbs Corporate Business Solutions Unternehmensberatung,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-15,2026-03-15
 x1F,30,Tier 4: Monitor,👀 Database Only,1,1,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-03-15,2026-03-15
 Deloitte,30,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-15,2026-03-15
-Graduate - Business Intelligence / Market Risk Management,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Leiter*in Finanzbuchhaltung / Stv. Direktor*in Finanzen,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Fachspezialist Rechnungswesen 80-100 %,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Leiter/in Finanzen 80 - 100 %,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Finanzcontroller 60-100 %,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-Leitung Finanzen & Risikocontrolling,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-22,2026-02-22
-zeb,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-02-23,2026-02-23
-Calida,25,Tier 4: Monitor,👀 Database Only,3,3,1,0,None,,2026-02-27,2026-03-16
-BEW Berliner Energie und Wärme,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
-Scheer Group,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-03-01,2026-03-01
-Senacor Technologies,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-01,2026-03-01
-Humanis,25,Tier 4: Monitor,👀 Database Only,5,5,1,2,Treasury Analytics & Reporting,Treasury Analytics & Reporting | Post-Merger Treasury Integration,2026-03-01,2026-03-16
+Camenzind Human Resources,25,Tier 4: Monitor,👀 Database Only,5,3,2,0,None,,2026-02-22,2026-03-16
+Humanis,25,Tier 4: Monitor,👀 Database Only,6,5,1,2,Treasury Analytics & Reporting,Treasury Analytics & Reporting | Post-Merger Treasury Integration,2026-03-01,2026-04-01
+Joker Kaderselektion,25,Tier 4: Monitor,👀 Database Only,6,5,1,0,None,,2026-03-01,2026-04-01
 Giesecke+Devrient,25,Tier 4: Monitor,👀 Database Only,1,1,1,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-03-15,2026-03-15
 Horváth,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-15,2026-03-15
 Capgemini Invent,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-15,2026-03-15
 EY Deutschland,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-15,2026-03-15
 KPMG AG Wirtschaftsprüfungsgesellschaft,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-15,2026-03-15
 Preyer,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-15,2026-03-15
-Interogo Holding,25,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-03-16,2026-03-16
+Finders,25,Tier 4: Monitor,👀 Database Only,3,3,1,0,None,,2026-03-15,2026-04-01
 esolva,25,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-16,2026-03-16
-UBS,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-16,2026-02-16
-PwC,20,Tier 4: Monitor,👀 Database Only,2,2,1,1,Cash Forecasting Enhancement,Cash Forecasting Enhancement,2026-02-16,2026-02-16
-Luzerner Kantonalbank,20,Tier 4: Monitor,👀 Database Only,2,2,2,1,Treasury Organization Redesign,Treasury Organization Redesign,2026-02-16,2026-03-16
-Steck Human Resources Management,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-19,2026-02-19
-swisspro NW,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-20,2026-03-16
-Keystone Recruitment,20,Tier 4: Monitor,👀 Database Only,3,3,1,0,None,,2026-02-22,2026-02-22
-Sensirion,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-02-22,2026-03-12
-Consult & Pepper,20,Tier 4: Monitor,👀 Database Only,2,2,1,0,None,,2026-02-25,2026-03-15
-Ringier,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-03-01,2026-03-01
-Joker Kaderselektion,20,Tier 4: Monitor,👀 Database Only,4,4,1,0,None,,2026-03-01,2026-03-16
+Head of Finance and Risk Banking,20,Tier 4: Monitor,👀 Database Only,1,0,1,0,None,,2026-02-22,2026-02-22
+Senior Avaloq Entwickler,20,Tier 4: Monitor,👀 Database Only,1,0,1,0,None,,2026-02-22,2026-02-22
+Manager - Consulting - SAP Finance - ERP Transformation,20,Tier 4: Monitor,👀 Database Only,1,0,1,0,None,,2026-02-22,2026-02-22
+"Senior Manager, SAP Finance Consulting",20,Tier 4: Monitor,👀 Database Only,1,0,1,0,None,,2026-02-22,2026-02-22
+Chief Executive Officer,20,Tier 4: Monitor,👀 Database Only,1,0,1,0,None,,2026-02-22,2026-02-22
+Calida,20,Tier 4: Monitor,👀 Database Only,3,2,1,0,None,,2026-02-27,2026-04-01
 Berliner Volksbank eG,20,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-10,2026-03-10
+Wetzel Personalberatung,20,Tier 4: Monitor,👀 Database Only,3,3,1,0,None,,2026-03-12,2026-04-01
 ZEISS,20,Tier 4: Monitor,👀 Database Only,1,1,1,0,None,,2026-03-15,2026-03-15
-Finders,20,Tier 4: Monitor,👀 Database Only,2,2,1,0,None,,2026-03-15,2026-03-15
-"Industrial and Commercial Bank of China Limited, Peking, Zweigniederlassung Zürich",20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-03-16,2026-03-16
+EMA Partners Switzerland,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-03-16,2026-04-01
+Airport Casino Basel,20,Tier 4: Monitor,👀 Database Only,2,2,2,0,None,,2026-04-01,2026-04-01
