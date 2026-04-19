@@ -5,12 +5,6 @@ on:
     - cron: '0 6 * * *'  # 6 AM UTC daily
   workflow_dispatch:  # Manual trigger button
 
-# Opt JavaScript-based actions (checkout, setup-python, etc.) into Node.js 24.
-# Node 20 is being removed from runners on 2026-09-16; forced default on 2026-06-02.
-# See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-
 jobs:
   scrape-jobs:
     runs-on: ubuntu-latest
@@ -57,6 +51,12 @@ jobs:
       # leaking through "ION" substring matches) get purged on each run.
       run: python cleanup_jobs_csv.py
 
+    - name: Run treasury topic suggestions
+      # Generates suggested_treasury_topic for each company using Claude API
+      run: python suggest_treasury_topics.py
+      env:
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
     - name: Export tab1 view to accumulating CSV
       # Produces treasury_jobs_export.csv — the same column layout as the
       # "All Jobs Table" tab in sales_dashboard.py plus a Job URL column.
@@ -86,7 +86,7 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add treasury_jobs.csv prospects.csv treasury_jobs_export.csv
+        git add treasury_jobs.csv prospects.csv treasury_jobs_export.csv treasury_jobs_with_suggestions.csv treasury_jobs_suggestions_summary.csv
         if git diff --quiet && git diff --staged --quiet; then
           echo "No changes to commit."
         else
