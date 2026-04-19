@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 DEFAULT_INPUT = "treasury_jobs.csv"
+DEFAULT_SUGGESTIONS = "treasury_jobs_suggestions_summary.csv"
 # One-shot runs get a dated filename; the daily workflow passes
 # --append with its own stable filename (e.g. treasury_jobs_export.csv).
 DEFAULT_OUTPUT = f"tab1_export_{datetime.now():%Y%m%d}.csv"
@@ -35,17 +36,22 @@ APPEND_DEFAULT_OUTPUT = "treasury_jobs_export.csv"
 # `In CRM` and `Letzter Kontakt` are computed from crm_all_companies.csv
 # (semicolon-delimited) using the same normalized-name match used by
 # sales_dashboard (2).py. `Job URL` is sourced from the scraper's `url` field.
+# REMOVED: location column
+# ADDED: Suggested Topic column (from suggest_treasury_topics.py output)
+# ADDED: Responsible column (computed from technologies/title/country)
+# RENAMED: Posted Date -> Job Run Date
 TAB1_COLUMNS: list[tuple[str, str]] = [
-    ("company",          "Company"),
-    ("title",            "Job Title"),
-    ("location",         "Location"),
-    ("Country",          "Country"),
-    ("Company_in_CRM",   "In CRM"),          # computed from CRM
-    ("Last_Contacted",   "Letzter Kontakt"),  # computed from CRM
-    ("source",           "Job Source"),
-    ("date_scraped",     "Posted Date"),
-    ("technologies",     "Technologies"),
-    ("url",              "Job URL"),
+    ("company",              "Company"),
+    ("title",                "Job Title"),
+    ("Country",              "Country"),
+    ("suggested_topic",      "Suggested Topic"),
+    ("responsible",          "Responsible"),
+    ("Company_in_CRM",       "In CRM"),
+    ("Last_Contacted",       "Letzter Kontakt"),
+    ("source",               "Job Source"),
+    ("date_scraped",         "Job Run Date"),
+    ("technologies",         "Technologies"),
+    ("url",                  "Job URL"),
 ]
 
 DEFAULT_CRM_FILE = "crm_all_companies.csv"
@@ -85,6 +91,41 @@ def _country_from_source_vectorized(df: pd.DataFrame) -> np.ndarray:
     from_loc = np.select([de, ch, at], ["Germany", "Switzerland", "Austria"], default="Unknown")
     mask = (from_source == "Switzerland") | (from_source == "Germany")
     return np.where(mask, from_source, from_loc)
+
+
+def assign_responsible(row) -> str:
+    """
+    Assign responsible person based on technology, job title, and country.
+    
+    Rules:
+    - Kyriba OR "cash management" in title → Sven
+    - ION OR "finanzierung" in title → Stephan
+    - SAP technology → Alexander
+    - Switzerland country → Tobias
+    - Everything else → Carsten
+    """
+    tech = str(row.get("technologies", "")).lower()
+    title = str(row.get("title", "")).lower()
+    country = str(row.get("Country", ""))
+    
+    # Check Kyriba or Cash Management
+    if "kyriba" in tech or "cash management" in title:
+        return "Sven"
+    
+    # Check ION or Finanzierung
+    if "ion" in tech or "finanzierung" in title:
+        return "Stephan"
+    
+    # Check SAP
+    if "sap" in tech:
+        return "Alexander"
+    
+    # Check Switzerland
+    if country == "Switzerland":
+        return "Tobias"
+    
+    # Default
+    return "Carsten"
 
 
 # ---------------------------------------------------------------------------
@@ -195,11 +236,26 @@ def enrich_with_crm(jobs: pd.DataFrame, crm: pd.DataFrame) -> pd.DataFrame:
 
 def format_last_contacted(series: pd.Series) -> pd.Series:
     """Render the Last_Contacted column as YYYY-MM-DD strings (empty if NaT)."""
-    s = pd.to_datetime(series, errors="coerce")
-    return s.dt.strftime("%Y-%m-%d").fillna("")
+    return series.apply(lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "")
 
 
 # ---------------------------------------------------------------------------
+
+
+def load_suggestions(path: Path) -> pd.DataFrame:
+    """Load treasury topic suggestions. Returns empty df if missing."""
+    if not path.exists():
+        print(f"⚠️  Suggestions file not found ({path}); 'Suggested Topic' will be empty.")
+        return pd.DataFrame(columns=["company", "suggested_treasury_topic"])
+    try:
+        df = pd.read_csv(path, encoding=CSV_ENCODING)
+        if "company" not in df.columns or "suggested_treasury_topic" not in df.columns:
+            print(f"⚠️  {path} missing required columns; skipping suggestions.")
+            return pd.DataFrame(columns=["company", "suggested_treasury_topic"])
+        return df[["company", "suggested_treasury_topic"]]
+    except Exception as e:
+        print(f"⚠️  Could not read suggestions file {path}: {e}")
+        return pd.DataFrame(columns=["company", "suggested_treasury_topic"])
 
 
 def load_jobs(path: Path) -> pd.DataFrame:
@@ -248,6 +304,13 @@ def build_tab1_table(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("Company_in_CRM", "Last_Contacted"):
         if col not in df.columns:
             df[col] = "" if col == "Company_in_CRM" else pd.NaT
+    # Defensive: if suggestions were not loaded, seed empty
+    if "suggested_topic" not in df.columns:
+        df["suggested_topic"] = ""
+    # Defensive: if responsible was not assigned, seed empty
+    if "responsible" not in df.columns:
+        df["responsible"] = ""
+    
     out = df[list(internal)].copy()
     out["date_scraped"] = out["date_scraped"].dt.strftime("%Y-%m-%d")
     out["Last_Contacted"] = format_last_contacted(out["Last_Contacted"])
@@ -330,6 +393,8 @@ def main() -> int:
                    help=f"Input CSV (default: {DEFAULT_INPUT})")
     p.add_argument("--out", default=DEFAULT_OUTPUT,
                    help=f"Output CSV (default: {DEFAULT_OUTPUT})")
+    p.add_argument("--suggestions", default=DEFAULT_SUGGESTIONS,
+                   help=f"Treasury topic suggestions CSV (default: {DEFAULT_SUGGESTIONS})")
     p.add_argument("--days", type=int, metavar="N",
                    help="Only include jobs scraped in the last N days")
     p.add_argument("--source", metavar="NAME",
@@ -366,6 +431,22 @@ def main() -> int:
 
     df = load_jobs(in_path)
     before = len(df)
+
+    # Load treasury topic suggestions (optional - for Copilot workflow, can be empty)
+    suggestions = load_suggestions(Path(args.suggestions))
+    if not suggestions.empty:
+        df = df.merge(
+            suggestions.rename(columns={"suggested_treasury_topic": "suggested_topic"}),
+            on="company",
+            how="left"
+        )
+    # Always ensure column exists (empty if no suggestions file)
+    if "suggested_topic" not in df.columns:
+        df["suggested_topic"] = ""
+    df["suggested_topic"] = df["suggested_topic"].fillna("")
+
+    # Assign responsible person
+    df["responsible"] = df.apply(assign_responsible, axis=1)
 
     # CRM enrichment (per-company cached lookup; mirrors sales_dashboard (2).py logic)
     if args.no_crm:
