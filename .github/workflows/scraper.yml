@@ -57,6 +57,13 @@ jobs:
       # leaking through "ION" substring matches) get purged on each run.
       run: python cleanup_jobs_csv.py
 
+    - name: Export tab1 view to accumulating CSV
+      # Produces treasury_jobs_export.csv — the same column layout as the
+      # "All Jobs Table" tab in sales_dashboard.py plus a Job URL column.
+      # --append keeps every previously-exported row and only adds jobs
+      # whose URL isn't already in the file, appended at the bottom.
+      run: python export_tab1_to_csv.py --append --out treasury_jobs_export.csv
+
     - name: Run lead scoring
       run: python lead_scoring.py
 
@@ -79,7 +86,7 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add treasury_jobs.csv prospects.csv
+        git add treasury_jobs.csv prospects.csv treasury_jobs_export.csv
         if git diff --quiet && git diff --staged --quiet; then
           echo "No changes to commit."
         else
