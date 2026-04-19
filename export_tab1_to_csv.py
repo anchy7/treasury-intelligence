@@ -239,6 +239,60 @@ def format_last_contacted(series: pd.Series) -> pd.Series:
     return series.apply(lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "")
 
 
+def save_to_local_onedrive(df: pd.DataFrame, filename: str = "treasury_jobs_export.csv") -> bool:
+    """
+    Save CSV to local OneDrive folder for Copilot agent pickup.
+    
+    This saves to your OneDrive/SharePoint sync folder so the file is:
+    1. Backed up to cloud automatically
+    2. Accessible from anywhere
+    3. Available for Copilot Studio agents
+    4. Ready for Power Automate flows
+    
+    Args:
+        df: DataFrame to save
+        filename: Output filename (default: treasury_jobs_export.csv)
+    
+    Returns:
+        True if saved successfully, False otherwise
+    """
+    try:
+        # YOUR SPECIFIC ONEDRIVE PATH
+        # This is Ana's OneDrive path - customize for other users
+        onedrive_path = Path(r"C:\Users\AnaGrm\OneDrive - Zanders-BV\Documents\GitHub\treasury-intelligence")
+        
+        # Alternative paths for other setups:
+        # onedrive_path = Path.home() / "OneDrive - Zanders-BV" / "TreasuryJobs"
+        # onedrive_path = Path.home() / "OneDrive" / "TreasuryJobs"
+        
+        # Create folder if it doesn't exist
+        onedrive_path.mkdir(parents=True, exist_ok=True)
+        
+        # Full output path
+        output_file = onedrive_path / filename
+        
+        # Save the CSV
+        df.to_csv(output_file, index=False, encoding=CSV_ENCODING)
+        
+        print(f"\n✅ SAVED TO ONEDRIVE:")
+        print(f"   📁 {output_file}")
+        print(f"   📊 {len(df)} rows")
+        
+        # Also save a timestamp file for tracking
+        timestamp_file = onedrive_path / "last_export_time.txt"
+        with open(timestamp_file, 'w', encoding='utf-8') as f:
+            f.write(f"Last export: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Rows exported: {len(df)}\n")
+            f.write(f"File: {filename}\n")
+        
+        return True
+        
+    except Exception as e:
+        print(f"\n⚠️  Could not save to OneDrive: {e}")
+        print("   (Main export still succeeded - this is optional)")
+        return False
+
+
 # ---------------------------------------------------------------------------
 
 
@@ -463,12 +517,32 @@ def main() -> int:
     if args.append:
         out = merge_with_existing(out, out_path, crm=crm if not args.no_crm else None)
 
+    # Save to primary output location (GitHub repo)
     out.to_csv(out_path, index=False, encoding=CSV_ENCODING)
 
-    print(f"📂 Input:   {in_path}  ({before} rows)")
-    print(f"📤 Output:  {out_path.resolve()}  ({len(out)} rows)")
+    # ALSO save to OneDrive/SharePoint for Copilot agent pickup
+    # This runs AFTER the main save, so if it fails, main export still succeeded
+    save_to_local_onedrive(out, filename=out_path.name)
+
+    print(f"\n{'='*60}")
+    print(f"📊 EXPORT COMPLETE")
+    print(f"{'='*60}")
+    print(f"📂 Input file:     {in_path}")
+    print(f"   Total rows:     {before}")
+    print(f"\n📤 Output file:    {out_path.resolve()}")
+    print(f"   Exported rows:  {len(out)}")
+    
     if not args.append and len(out) < before:
-        print(f"🔍 Filters applied: kept {len(out)} of {before}")
+        print(f"\n🔍 Filters applied:")
+        print(f"   Before: {before} rows")
+        print(f"   After:  {len(out)} rows")
+        print(f"   Filtered out: {before - len(out)} rows")
+    
+    if args.append:
+        print(f"\n📌 Append mode: Previous rows preserved + new rows added")
+    
+    print(f"{'='*60}\n")
+    
     return 0
 
 
