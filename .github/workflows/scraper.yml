@@ -86,7 +86,7 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add treasury_jobs.csv prospects.csv treasury_jobs_export.csv treasury_jobs_with_suggestions.csv treasury_jobs_suggestions_summary.csv
+        git add treasury_jobs.csv prospects.csv treasury_jobs_export.csv
         if git diff --quiet && git diff --staged --quiet; then
           echo "No changes to commit."
         else
