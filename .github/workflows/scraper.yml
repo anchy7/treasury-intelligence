@@ -51,11 +51,11 @@ jobs:
       # leaking through "ION" substring matches) get purged on each run.
       run: python cleanup_jobs_csv.py
 
-    - name: Run treasury topic suggestions
+    #- name: Run treasury topic suggestions
       # Generates suggested_treasury_topic for each company using Claude API
-      run: python suggest_treasury_topics.py
-      env:
-        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+     # run: python suggest_treasury_topics.py
+     # env:
+     #   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} 
 
     - name: Export tab1 view to accumulating CSV
       # Produces treasury_jobs_export.csv — the same column layout as the
