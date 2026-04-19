@@ -8,28 +8,29 @@ on:
 jobs:
   scrape-jobs:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
-    
+      uses: actions/checkout@v4
+
     - name: Setup Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-    
+        cache: 'pip'
+
     - name: Install Chrome
       run: |
         sudo apt-get update
         sudo apt-get install -y wget unzip
         wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
         sudo apt-get install -y ./google-chrome-stable_current_amd64.deb
-    
+
     - name: Install Python dependencies
       run: |
         pip install --upgrade pip
         pip install -r requirements.txt
-        
+
     - name: Remove preinstalled chromedriver
       run: |
         sudo rm -f /usr/bin/chromedriver || true
@@ -40,20 +41,42 @@ jobs:
       env:
         GMAIL_CREDENTIALS: ${{ secrets.GMAIL_CREDENTIALS }}
         GMAIL_TOKEN: ${{ secrets.GMAIL_TOKEN }}
-            
+
     - name: Run web scraper (StepStone + Jobs.ch)
       run: python scraper.py
-    
+
+    - name: Clean up non-treasury matches
+      # Applies TreasuryWebScraper.TREASURY_KEYWORDS to every row in
+      # treasury_jobs.csv so legacy false positives (e.g. "Vegetationspfleger"
+      # leaking through "ION" substring matches) get purged on each run.
+      run: python cleanup_jobs_csv.py
+
     - name: Run lead scoring
       run: python lead_scoring.py
-      
-   # - name: Create treasury jobs table
-   #   run: create_jobs_table.py
-      
+
+    # - name: Create treasury jobs table
+    #   run: python create_jobs_table.py
+
+    - name: Guard against committing secrets
+      # Belt-and-braces check: if credentials ever sneak out of .gitignore,
+      # fail the run loudly instead of pushing them to a public repo.
+      run: |
+        set -e
+        for f in credentials.json credentials_old.json creds_base64.txt token.json token_base64.txt; do
+          if git ls-files --error-unmatch "$f" 2>/dev/null; then
+            echo "::error::$f is tracked by git — aborting before push."
+            exit 1
+          fi
+        done
+
     - name: Commit and push results
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add treasury_jobs.csv prospects.csv 
-        git diff --quiet && git diff --staged --quiet || git commit -m "Update jobs data - $(date +'%Y-%m-%d')"
-        git push
+        git add treasury_jobs.csv prospects.csv
+        if git diff --quiet && git diff --staged --quiet; then
+          echo "No changes to commit."
+        else
+          git commit -m "Update jobs data - $(date +'%Y-%m-%d')"
+          git push
+        fi
