@@ -73,11 +73,57 @@ class TreasuryWebScraper:
         print("📊 SCRAPING STEPSTONE.DE")
         print("=" * 60)
 
+        # Broad set of treasury-related keywords across role types, TMS platforms,
+        # and interim/consulting titles. Each tuple is (keyword, location).
+        # Location is always "Deutschland" — nationwide searches only.
         searches = [
+            # Core treasury roles (EN)
             ("Treasury", "Deutschland"),
+            ("Treasury Manager", "Deutschland"),
+            ("Head of Treasury", "Deutschland"),
+            ("Group Treasurer", "Deutschland"),
             ("Cash Manager", "Deutschland"),
-            ("Treasury", "München"),
-            ("Liquidity", "Frankfurt"),
+            ("Cash Management", "Deutschland"),
+            ("Liquidity", "Deutschland"),
+            ("Corporate Treasury", "Deutschland"),
+            ("Treasury Analyst", "Deutschland"),
+            ("Treasury Accountant", "Deutschland"),
+            ("Treasury Operations", "Deutschland"),
+
+            # Industry-specific terms (German market)
+            ("Treasurer", "Deutschland"),
+            ("Treasury Referent", "Deutschland"),
+            ("Konzernfinanzierung", "Deutschland"),
+            ("Liquiditätsmanagement", "Deutschland"),
+            ("Zahlungsverkehr", "Deutschland"),
+            ("Konzerntreasury", "Deutschland"),
+
+            # Treasury Management Systems (TMS) / platforms
+            ("Kyriba", "Deutschland"),
+            ("SAP Treasury", "Deutschland"),
+            ("SAP TRM", "Deutschland"),
+            ("SAP S/4HANA Treasury", "Deutschland"),
+            ("Nomentia", "Deutschland"),
+            ("ION Treasury", "Deutschland"),
+            ("Wallstreet Suite", "Deutschland"),
+            ("Reval", "Deutschland"),
+            ("FIS Quantum", "Deutschland"),
+            ("GTreasury", "Deutschland"),
+            ("Coupa Treasury", "Deutschland"),
+            ("Serrala", "Deutschland"),
+            ("Bellin", "Deutschland"),
+            ("TIS Treasury", "Deutschland"),
+
+            # Interim / consulting
+            ("Interim Treasury Manager", "Deutschland"),
+            ("Treasury Consultant", "Deutschland"),
+            ("Treasury Berater", "Deutschland"),
+
+            # Related functions
+            ("Risk Manager Treasury", "Deutschland"),
+            ("FX Risk", "Deutschland"),
+            ("Hedging", "Deutschland"),
+            ("Working Capital", "Deutschland"),
         ]
 
         for keyword, location in searches:
@@ -178,7 +224,52 @@ class TreasuryWebScraper:
         print("📊 SCRAPING JOBS.CH (Switzerland)")
         print("=" * 60)
 
-        searches = ["Treasury", "Cash Manager", "Liquidität"]
+        # Broad Swiss treasury keyword list: core roles, TMS platforms, interim/consulting.
+        searches = [
+            # Core treasury roles (EN/DE/FR)
+            "Treasury",
+            "Treasury Manager",
+            "Head of Treasury",
+            "Group Treasurer",
+            "Cash Manager",
+            "Cash Management",
+            "Liquidity",
+            "Trésorerie",
+            "Corporate Treasury",
+            "Treasury Analyst",
+            "Treasury Operations",
+
+            # Industry-specific terms (German market)
+            "Treasurer",
+            "Treasury Referent",
+            "Konzernfinanzierung",
+            "Liquiditätsmanagement",
+            "Zahlungsverkehr",
+            "Konzerntreasury",
+
+            # TMS platforms
+            "Kyriba",
+            "SAP Treasury",
+            "SAP TRM",
+            "Nomentia",
+            "ION Treasury",
+            "Wallstreet Suite",
+            "Reval",
+            "FIS Quantum",
+            "GTreasury",
+            "Coupa Treasury",
+            "Serrala",
+            "Bellin",
+            "TIS Treasury",
+
+            # Interim / consulting
+            "Interim Treasury Manager",
+            "Treasury Consultant",
+
+            # Related
+            "FX Risk",
+            "Hedging",
+        ]
 
         for keyword in searches:
             print(f"\n🔍 Searching: '{keyword}'")
@@ -443,10 +534,26 @@ class TreasuryWebScraper:
         tech: list[str] = []
         text = (title or "").lower()
 
-        if "SAP" in text:
-            tech.append("SAP")
-        if "kyriba" in text:
-            tech.append("Kyriba")
+        # Treasury Management Systems (TMS)
+        tms_keywords = {
+            "SAP": ["sap treasury", "sap trm", "s/4hana treasury", "sap s4", " sap "],
+            "Kyriba": ["kyriba"],
+            "Nomentia": ["nomentia"],
+            "ION Treasury": ["ion treasury", "wallstreet suite", "wss", "openlink", "reval"],
+            "FIS Quantum": ["fis quantum", "quantum treasury"],
+            "GTreasury": ["gtreasury", "g-treasury"],
+            "Coupa Treasury": ["coupa treasury"],
+            "Serrala": ["serrala"],
+            "Bellin": ["bellin", "tm5"],
+            "TIS": ["tis treasury", "treasury intelligence solutions"],
+        }
+        # Pad text with spaces so " sap " style boundary checks work at edges
+        padded = f" {text} "
+        for label, needles in tms_keywords.items():
+            if any(n in padded for n in needles):
+                tech.append(label)
+
+        # General tech / connectivity
         if re.search(r"\bpython\b", text):
             tech.append("Python")
         if re.search(r"\bapi\b", text):
@@ -456,7 +563,18 @@ class TreasuryWebScraper:
         if "power bi" in text or "powerbi" in text:
             tech.append("Power BI")
 
-        return tech
+        # Role flags useful for lead scoring
+        if "interim" in text:
+            tech.append("Interim")
+
+        # De-dupe while preserving order
+        seen = set()
+        deduped = []
+        for t in tech:
+            if t not in seen:
+                seen.add(t)
+                deduped.append(t)
+        return deduped
 
     def save_to_csv(self, filename: str = "treasury_jobs.csv"):
         print("=" * 60)
