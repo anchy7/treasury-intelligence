@@ -5,6 +5,12 @@ on:
     - cron: '0 6 * * *'  # 6 AM UTC daily
   workflow_dispatch:  # Manual trigger button
 
+# Opt JavaScript-based actions (checkout, setup-python, etc.) into Node.js 24.
+# Node 20 is being removed from runners on 2026-09-16; forced default on 2026-06-02.
+# See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   scrape-jobs:
     runs-on: ubuntu-latest
