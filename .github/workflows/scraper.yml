@@ -62,7 +62,8 @@ jobs:
       # "All Jobs Table" tab in sales_dashboard.py plus a Job URL column.
       # --append keeps every previously-exported row and only adds jobs
       # whose URL isn't already in the file, appended at the bottom.
-      run: python export_tab1_to_csv.py --append --out treasury_jobs_export.csv
+      #run: python export_tab1_to_csv.py --append --out treasury_jobs_export.csv
+      run: python export_tab1_to_csv.py --out treasury_jobs_export.csv
 
     - name: Run lead scoring
       run: python lead_scoring.py
