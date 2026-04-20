@@ -32,18 +32,18 @@ DEFAULT_OUTPUT = f"tab1_export_{datetime.now():%Y%m%d}.csv"
 APPEND_DEFAULT_OUTPUT = "treasury_jobs_export.csv"
 
 # Column mapping: internal CSV name -> display name used in tab1.
-# `In CRM` and `Letzter Kontakt` are computed from crm_all_companies.csv
+# `In Hubspot` and `Letzter Kontakt` are computed from crm_all_companies.csv
 # (semicolon-delimited) using the same normalized-name match used by
 # sales_dashboard (2).py. `Job URL` is sourced from the scraper's `url` field.
 # REMOVED: location column, suggested_topic column
 # ADDED: Responsible column (computed from technologies/title/country)
-# RENAMED: Posted Date -> Job Run Date
+# RENAMED: Posted Date -> Job Run Date, In CRM -> In Hubspot
 TAB1_COLUMNS: list[tuple[str, str]] = [
     ("company",              "Company"),
     ("title",                "Job Title"),
     ("Country",              "Country"),
     ("responsible",          "Responsible"),
-    ("Company_in_CRM",       "In CRM"),
+    ("Company_in_CRM",       "In Hubspot"),
     ("Last_Contacted",       "Letzter Kontakt"),
     ("source",               "Job Source"),
     ("date_scraped",         "Job Run Date"),
@@ -154,7 +154,7 @@ def normalize_company_name(company) -> str:
 def load_crm(path: Path) -> pd.DataFrame:
     """Load crm_all_companies.csv (semicolon-delimited). Returns empty df if missing."""
     if not path.exists():
-        print(f"⚠️  CRM file not found ({path}); 'In CRM' will be 'Nein' for every row.")
+        print(f"⚠️  CRM file not found ({path}); 'In Hubspot' will be 'Nein' for every row.")
         return pd.DataFrame(columns=["Company name", "Last Contacted", "company_clean"])
     try:
         df = pd.read_csv(path, sep=";", encoding=CSV_ENCODING)
@@ -352,7 +352,7 @@ def build_tab1_table(df: pd.DataFrame) -> pd.DataFrame:
 
 def _refresh_crm_cols_in_existing(existing: pd.DataFrame, crm: pd.DataFrame) -> pd.DataFrame:
     """
-    CRM fields (`In CRM`, `Letzter Kontakt`) are derived — not a historical
+    CRM fields (`In Hubspot`, `Letzter Kontakt`) are derived — not a historical
     record of what they were the day the row was exported. Every run re-derives
     them from the current CRM snapshot so old rows stay accurate.
     """
@@ -361,7 +361,7 @@ def _refresh_crm_cols_in_existing(existing: pd.DataFrame, crm: pd.DataFrame) -> 
     tmp = existing.rename(columns={"Company": "company"})
     enriched = enrich_with_crm(tmp[["company"]], crm)
     existing = existing.copy()
-    existing["In CRM"] = enriched["Company_in_CRM"].values
+    existing["In Hubspot"] = enriched["Company_in_CRM"].values
     existing["Letzter Kontakt"] = format_last_contacted(enriched["Last_Contacted"]).values
     return existing
 
@@ -401,7 +401,7 @@ def merge_with_existing(new_df: pd.DataFrame, out_path: Path, crm: pd.DataFrame 
     new_rows = new_df[mask_new]
 
     if new_rows.empty:
-        print(f"ℹ️  No new jobs. {out_path.name} updated in place ({len(existing)} rows, CRM refreshed).")
+        print(f"ℹ️  No new jobs. {out_path.name} updated in place ({len(existing)} rows, Hubspot status refreshed).")
         return existing
 
     # Reconcile column order: keep existing layout, add any missing columns
@@ -444,7 +444,7 @@ def main() -> int:
                          "add only rows with a Job URL not already present. Useful "
                          "for building an accumulating history via a daily job."))
     p.add_argument("--crm", default=DEFAULT_CRM_FILE,
-                   help=f"CRM CSV used to compute 'In CRM' + 'Letzter Kontakt' "
+                   help=f"CRM CSV used to compute 'In Hubspot' + 'Letzter Kontakt' "
                         f"(default: {DEFAULT_CRM_FILE}, semicolon-delimited)")
     p.add_argument("--no-crm", action="store_true",
                    help="Skip CRM enrichment entirely — those columns will be empty.")
