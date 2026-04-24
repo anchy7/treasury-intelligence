@@ -56,11 +56,20 @@ TAB1_COLUMNS: list[tuple[str, str]] = [
 
 DEFAULT_CRM_FILE = "crm_all_companies.csv"
 
-# Use UTF-8 with BOM for all CSV I/O. Keeps the file valid UTF-8 (so tools like
-# pandas and text editors read it fine — the BOM is transparently stripped when
-# encoding='utf-8-sig' is used on read) but also makes Excel correctly detect
-# the encoding so German characters (ö, ä, ü, ß) render properly.
-CSV_ENCODING = "utf-8-sig"
+# Use plain UTF-8 (no BOM) for all CSV I/O. This keeps the file a clean UTF-8
+# byte stream that Power Automate, VS Code and modern Excel can all parse
+# without the leading ï»¿ BOM sneaking into the first cell header.
+CSV_ENCODING = "utf-8"
+
+# Field separator for the main tab1 export. Semicolon is used (instead of the
+# default comma) because the dataset contains free-text fields — Job Title,
+# Technologies, Suggested Topics, Last Projects — that frequently embed commas.
+# Using ';' lets a naïve split('\n') + split(';') CSV parser (e.g. the Power
+# Automate expressions in the weekly enrichment flow) tokenize rows correctly
+# without needing full RFC 4180 quote-aware parsing. The CRM file
+# (crm_all_companies.csv) is ALSO semicolon-delimited but kept as its own
+# read with an explicit sep=';' for clarity.
+CSV_SEPARATOR = ";"
 
 
 def _country_from_source_vectorized(df: pd.DataFrame) -> np.ndarray:
@@ -209,7 +218,10 @@ def format_last_contacted(series: pd.Series) -> pd.Series:
 
 
 def load_jobs(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path, encoding=CSV_ENCODING)
+    # The input scraper CSV is comma-delimited (historical format), so we do
+    # NOT pass CSV_SEPARATOR here — let pandas use its default comma. Only the
+    # OUTPUT written by this script uses CSV_SEPARATOR.
+    df = pd.read_csv(path, encoding="utf-8-sig")
     df["date_scraped"] = pd.to_datetime(df["date_scraped"], errors="coerce")
     df["Country"] = _country_from_source_vectorized(df)
     # Ensure optional columns exist so downstream selection never KeyErrors.
@@ -310,7 +322,12 @@ def merge_with_existing(new_df: pd.DataFrame, out_path: Path, crm: pd.DataFrame 
         return new_df
 
     try:
-        existing = pd.read_csv(out_path, encoding=CSV_ENCODING)
+        # Read back the previous run's output using the same separator + encoding
+        # it was written with. `utf-8-sig` here is deliberate (not CSV_ENCODING) —
+        # it transparently handles both plain UTF-8 (current format) and legacy
+        # files that were written with a BOM, so the first run after the
+        # UTF-8-with-BOM → plain-UTF-8 migration doesn't fail.
+        existing = pd.read_csv(out_path, sep=CSV_SEPARATOR, encoding="utf-8-sig")
     except Exception as e:
         print(f"⚠️  Could not read {out_path} ({e}); overwriting.")
         return new_df
@@ -404,7 +421,7 @@ def main() -> int:
     if args.append:
         out = merge_with_existing(out, out_path, crm=crm if not args.no_crm else None)
 
-    out.to_csv(out_path, index=False, encoding=CSV_ENCODING)
+    out.to_csv(out_path, index=False, sep=CSV_SEPARATOR, encoding=CSV_ENCODING)
 
     print(f"📂 Input:   {in_path}  ({before} rows)")
     print(f"📤 Output:  {out_path.resolve()}  ({len(out)} rows)")
