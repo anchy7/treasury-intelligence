@@ -5,8 +5,10 @@ Headless / CLI version of the "📋 All Jobs Table" (tab1) from sales_dashboard.
 
 Produces a CSV with the exact same columns that tab1 displays in the Streamlit
 dashboard, plus an extra `Job URL` column sourced from the scraper's `url`
-field. All of tab1's sidebar filters (date range, source, country, company
-search, technology search) and the sort selector are exposed as CLI flags.
+field, plus two enrichment placeholder columns — `Suggested Topics` and
+`Last Projects` — that the weekly Copilot enrichment flow fills in afterwards.
+All of tab1's sidebar filters (date range, source, country, company search,
+technology search) and the sort selector are exposed as CLI flags.
 
 Usage:
     python export_tab1_to_csv.py
@@ -32,23 +34,24 @@ DEFAULT_OUTPUT = f"tab1_export_{datetime.now():%Y%m%d}.csv"
 APPEND_DEFAULT_OUTPUT = "treasury_jobs_export.csv"
 
 # Column mapping: internal CSV name -> display name used in tab1.
-# `In Hubspot` and `Letzter Kontakt` are computed from crm_all_companies.csv
+# `In CRM` and `Last Contacted` are computed from crm_all_companies.csv
 # (semicolon-delimited) using the same normalized-name match used by
 # sales_dashboard (2).py. `Job URL` is sourced from the scraper's `url` field.
-# REMOVED: location column, suggested_topic column
-# ADDED: Responsible column (computed from technologies/title/country)
-# RENAMED: Posted Date -> Job Run Date, In CRM -> In Hubspot
+# `Suggested Topics` and `Last Projects` are placeholders for values written
+# back by the weekly Copilot enrichment flow — the scraper emits them empty.
 TAB1_COLUMNS: list[tuple[str, str]] = [
-    ("company",              "Company"),
-    ("title",                "Job Title"),
-    ("Country",              "Country"),
-    ("responsible",          "Responsible"),
-    ("Company_in_CRM",       "In Hubspot"),
-    ("Last_Contacted",       "Letzter Kontakt"),
-    ("source",               "Job Source"),
-    ("date_scraped",         "Job Run Date"),
-    ("technologies",         "Technologies"),
-    ("url",                  "Job URL"),
+    ("company",          "Company"),
+    ("title",            "Job Title"),
+    ("location",         "Location"),
+    ("Country",          "Country"),
+    ("Company_in_CRM",   "In CRM"),          # computed from CRM
+    ("Last_Contacted",   "Last Contacted"),   # computed from CRM
+    ("source",           "Job Source"),
+    ("date_scraped",     "Posted Date"),
+    ("technologies",     "Technologies"),
+    ("url",              "Job URL"),
+    ("suggested_topics", "Suggested Topics"),  # populated by Copilot enrichment flow
+    ("last_projects",    "Last Projects"),     # populated by Copilot enrichment flow
 ]
 
 DEFAULT_CRM_FILE = "crm_all_companies.csv"
@@ -90,41 +93,6 @@ def _country_from_source_vectorized(df: pd.DataFrame) -> np.ndarray:
     return np.where(mask, from_source, from_loc)
 
 
-def assign_responsible(row) -> str:
-    """
-    Assign responsible person based on technology, job title, and country.
-    
-    Rules:
-    - Kyriba OR "cash management" in title → Sven
-    - ION OR "finanzierung" in title → Stephan
-    - SAP technology → Alexander
-    - Switzerland country → Tobias
-    - Everything else → Carsten
-    """
-    tech = str(row.get("technologies", "")).lower()
-    title = str(row.get("title", "")).lower()
-    country = str(row.get("Country", ""))
-    
-    # Check Kyriba or Cash Management
-    if "kyriba" in tech or "cash management" in title:
-        return "Sven"
-    
-    # Check ION or Finanzierung
-    if "ion" in tech or "finanzierung" in title:
-        return "Stephan"
-    
-    # Check SAP
-    if "sap" in tech:
-        return "Alexander"
-    
-    # Check Switzerland
-    if country == "Switzerland":
-        return "Tobias"
-    
-    # Default
-    return "Carsten"
-
-
 # ---------------------------------------------------------------------------
 # CRM enrichment — mirrors sales_dashboard (2).py so values match the dashboard
 # ---------------------------------------------------------------------------
@@ -154,7 +122,7 @@ def normalize_company_name(company) -> str:
 def load_crm(path: Path) -> pd.DataFrame:
     """Load crm_all_companies.csv (semicolon-delimited). Returns empty df if missing."""
     if not path.exists():
-        print(f"⚠️  CRM file not found ({path}); 'In Hubspot' will be 'Nein' for every row.")
+        print(f"⚠️  CRM file not found ({path}); 'In CRM' will be 'Nein' for every row.")
         return pd.DataFrame(columns=["Company name", "Last Contacted", "company_clean"])
     try:
         df = pd.read_csv(path, sep=";", encoding=CSV_ENCODING)
@@ -233,61 +201,8 @@ def enrich_with_crm(jobs: pd.DataFrame, crm: pd.DataFrame) -> pd.DataFrame:
 
 def format_last_contacted(series: pd.Series) -> pd.Series:
     """Render the Last_Contacted column as YYYY-MM-DD strings (empty if NaT)."""
-    return series.apply(lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "")
-
-
-def save_to_local_onedrive(df: pd.DataFrame, filename: str = "treasury_jobs_export.csv") -> bool:
-    """
-    Save CSV to local OneDrive folder for Copilot agent pickup.
-    
-    This saves to your OneDrive/SharePoint sync folder so the file is:
-    1. Backed up to cloud automatically
-    2. Accessible from anywhere
-    3. Available for Copilot Studio agents
-    4. Ready for Power Automate flows
-    
-    Args:
-        df: DataFrame to save
-        filename: Output filename (default: treasury_jobs_export.csv)
-    
-    Returns:
-        True if saved successfully, False otherwise
-    """
-    try:
-        # YOUR SPECIFIC ONEDRIVE PATH
-        # This is Ana's OneDrive path - customize for other users
-        onedrive_path = Path(r"C:\Users\AnaGrm\OneDrive - Zanders-BV\Documents\GitHub\treasury-intelligence")
-        
-        # Alternative paths for other setups:
-        # onedrive_path = Path.home() / "OneDrive - Zanders-BV" / "TreasuryJobs"
-        # onedrive_path = Path.home() / "OneDrive" / "TreasuryJobs"
-        
-        # Create folder if it doesn't exist
-        onedrive_path.mkdir(parents=True, exist_ok=True)
-        
-        # Full output path
-        output_file = onedrive_path / filename
-        
-        # Save the CSV
-        df.to_csv(output_file, index=False, encoding=CSV_ENCODING)
-        
-        print(f"\n✅ SAVED TO ONEDRIVE:")
-        print(f"   📁 {output_file}")
-        print(f"   📊 {len(df)} rows")
-        
-        # Also save a timestamp file for tracking
-        timestamp_file = onedrive_path / "last_export_time.txt"
-        with open(timestamp_file, 'w', encoding='utf-8') as f:
-            f.write(f"Last export: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Rows exported: {len(df)}\n")
-            f.write(f"File: {filename}\n")
-        
-        return True
-        
-    except Exception as e:
-        print(f"\n⚠️  Could not save to OneDrive: {e}")
-        print("   (Main export still succeeded - this is optional)")
-        return False
+    s = pd.to_datetime(series, errors="coerce")
+    return s.dt.strftime("%Y-%m-%d").fillna("")
 
 
 # ---------------------------------------------------------------------------
@@ -297,8 +212,11 @@ def load_jobs(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path, encoding=CSV_ENCODING)
     df["date_scraped"] = pd.to_datetime(df["date_scraped"], errors="coerce")
     df["Country"] = _country_from_source_vectorized(df)
-    # Ensure optional columns exist so downstream selection never KeyErrors
-    for col in ("url", "technologies"):
+    # Ensure optional columns exist so downstream selection never KeyErrors.
+    # `suggested_topics` / `last_projects` are populated later by the Copilot
+    # enrichment flow (Power Automate writes back into the CSV); we seed them
+    # empty here so fresh scraper rows carry the correct column layout.
+    for col in ("url", "technologies", "suggested_topics", "last_projects"):
         if col not in df.columns:
             df[col] = ""
     return df
@@ -339,10 +257,13 @@ def build_tab1_table(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("Company_in_CRM", "Last_Contacted"):
         if col not in df.columns:
             df[col] = "" if col == "Company_in_CRM" else pd.NaT
-    # Defensive: if responsible was not assigned, seed empty
-    if "responsible" not in df.columns:
-        df["responsible"] = ""
-    
+    # Defensive: enrichment columns ('Suggested Topics', 'Last Projects') are
+    # populated by the Power Automate flow, not the scraper. Seed them empty
+    # if they aren't already present so the column selection below doesn't
+    # KeyError on fresh data.
+    for col in ("suggested_topics", "last_projects"):
+        if col not in df.columns:
+            df[col] = ""
     out = df[list(internal)].copy()
     out["date_scraped"] = out["date_scraped"].dt.strftime("%Y-%m-%d")
     out["Last_Contacted"] = format_last_contacted(out["Last_Contacted"])
@@ -352,17 +273,23 @@ def build_tab1_table(df: pd.DataFrame) -> pd.DataFrame:
 
 def _refresh_crm_cols_in_existing(existing: pd.DataFrame, crm: pd.DataFrame) -> pd.DataFrame:
     """
-    CRM fields (`In Hubspot`, `Letzter Kontakt`) are derived — not a historical
+    CRM fields (`In CRM`, `Last Contacted`) are derived — not a historical
     record of what they were the day the row was exported. Every run re-derives
     them from the current CRM snapshot so old rows stay accurate.
+
+    For back-compat: if the existing CSV still has the legacy `Letzter Kontakt`
+    column, it is dropped and replaced by the new `Last Contacted` column so
+    the file migrates cleanly on the next run.
     """
     if crm.empty or "Company" not in existing.columns:
         return existing
     tmp = existing.rename(columns={"Company": "company"})
     enriched = enrich_with_crm(tmp[["company"]], crm)
     existing = existing.copy()
-    existing["In Hubspot"] = enriched["Company_in_CRM"].values
-    existing["Letzter Kontakt"] = format_last_contacted(enriched["Last_Contacted"]).values
+    existing["In CRM"] = enriched["Company_in_CRM"].values
+    if "Letzter Kontakt" in existing.columns:
+        existing = existing.drop(columns=["Letzter Kontakt"])
+    existing["Last Contacted"] = format_last_contacted(enriched["Last_Contacted"]).values
     return existing
 
 
@@ -401,7 +328,7 @@ def merge_with_existing(new_df: pd.DataFrame, out_path: Path, crm: pd.DataFrame 
     new_rows = new_df[mask_new]
 
     if new_rows.empty:
-        print(f"ℹ️  No new jobs. {out_path.name} updated in place ({len(existing)} rows, Hubspot status refreshed).")
+        print(f"ℹ️  No new jobs. {out_path.name} updated in place ({len(existing)} rows, CRM refreshed).")
         return existing
 
     # Reconcile column order: keep existing layout, add any missing columns
@@ -444,7 +371,7 @@ def main() -> int:
                          "add only rows with a Job URL not already present. Useful "
                          "for building an accumulating history via a daily job."))
     p.add_argument("--crm", default=DEFAULT_CRM_FILE,
-                   help=f"CRM CSV used to compute 'In Hubspot' + 'Letzter Kontakt' "
+                   help=f"CRM CSV used to compute 'In CRM' + 'Last Contacted' "
                         f"(default: {DEFAULT_CRM_FILE}, semicolon-delimited)")
     p.add_argument("--no-crm", action="store_true",
                    help="Skip CRM enrichment entirely — those columns will be empty.")
@@ -469,10 +396,6 @@ def main() -> int:
         crm = load_crm(Path(args.crm))
     df = enrich_with_crm(df, crm)
 
-    # IMPORTANT: Assign responsible AFTER Country column exists (created by load_jobs)
-    # This must happen before filtering but after Country is populated
-    df["responsible"] = df.apply(assign_responsible, axis=1)
-
     df = apply_filters(df, args)
     df = apply_sort(df, args.sort)
     out = build_tab1_table(df)
@@ -481,32 +404,12 @@ def main() -> int:
     if args.append:
         out = merge_with_existing(out, out_path, crm=crm if not args.no_crm else None)
 
-    # Save to primary output location (GitHub repo)
     out.to_csv(out_path, index=False, encoding=CSV_ENCODING)
 
-    # ALSO save to OneDrive/SharePoint for Copilot agent pickup
-    # This runs AFTER the main save, so if it fails, main export still succeeded
-    save_to_local_onedrive(out, filename=out_path.name)
-
-    print(f"\n{'='*60}")
-    print(f"📊 EXPORT COMPLETE")
-    print(f"{'='*60}")
-    print(f"📂 Input file:     {in_path}")
-    print(f"   Total rows:     {before}")
-    print(f"\n📤 Output file:    {out_path.resolve()}")
-    print(f"   Exported rows:  {len(out)}")
-    
+    print(f"📂 Input:   {in_path}  ({before} rows)")
+    print(f"📤 Output:  {out_path.resolve()}  ({len(out)} rows)")
     if not args.append and len(out) < before:
-        print(f"\n🔍 Filters applied:")
-        print(f"   Before: {before} rows")
-        print(f"   After:  {len(out)} rows")
-        print(f"   Filtered out: {before - len(out)} rows")
-    
-    if args.append:
-        print(f"\n📌 Append mode: Previous rows preserved + new rows added")
-    
-    print(f"{'='*60}\n")
-    
+        print(f"🔍 Filters applied: kept {len(out)} of {before}")
     return 0
 
 
