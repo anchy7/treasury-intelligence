@@ -21,17 +21,16 @@ Key improvements over previous version
 
 from __future__ import annotations
 
-import csv
 import os
 import random
 import re
 import time
-from dataclasses import dataclass, field, asdict
+import urllib.request
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional
 from urllib.parse import quote_plus, urljoin
-
-import feedparser                          # pip install feedparser
 import pandas as pd
 from bs4 import BeautifulSoup, Tag
 
@@ -404,11 +403,11 @@ class TreasuryScraper:
         )
 
     # ------------------------------------------------------------------
-    # Indeed.de — RSS (avoids bot-detection entirely)
+    # Indeed.de — RSS via stdlib only (zero extra dependencies)
     # ------------------------------------------------------------------
     def scrape_indeed_de(self):
         print("=" * 60)
-        print("📊 SCRAPING INDEED.DE (RSS)")
+        print("📊 SCRAPING INDEED.DE (RSS — no bot wall)")
         print("=" * 60)
 
         feeds = [
@@ -421,24 +420,41 @@ class TreasuryScraper:
         ]
 
         for query, location in feeds:
-            url = (
+            rss_url = (
                 f"https://de.indeed.com/rss?q={quote_plus(query)}"
                 f"&l={quote_plus(location)}&sort=date"
             )
             print(f"\n🔍 RSS: '{query}' in {location}")
             try:
-                feed = feedparser.parse(url)
-                entries = feed.get("entries", [])
-                print(f"   Entries: {len(entries)}")
+                req = urllib.request.Request(
+                    rss_url,
+                    headers={
+                        "User-Agent": (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/124.0.0.0 Safari/537.36"
+                        )
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    raw = resp.read()
+
+                root = ET.fromstring(raw)
+                items = root.findall(".//item")
+                print(f"   Entries: {len(items)}")
 
                 added = 0
-                for entry in entries:
-                    title   = entry.get("title", "")
-                    job_url = entry.get("link", "")
-                    company = entry.get("author", "") or entry.get("source", {}).get("title", "Unknown")
-                    loc     = location
+                for item in items:
+                    def _tag(name: str) -> str:
+                        el = item.find(name)
+                        return (el.text or "").strip() if el is not None else ""
 
-                    # Indeed RSS encodes location in the title sometimes: "Title - City"
+                    title   = _tag("title")
+                    job_url = _tag("link")
+                    company = _tag("source") or _tag("author") or "Unknown"
+                    loc     = _tag("location") or location
+
+                    # Indeed often encodes "Job Title - City" in the title field
                     if " - " in title:
                         parts = title.rsplit(" - ", 1)
                         title = parts[0].strip()
