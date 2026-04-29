@@ -99,34 +99,132 @@ def assign_responsible(row) -> str:
     """
     Assign responsible person based on technology, job title, and country.
 
-    Rules:
-    - Kyriba OR "cash management" in title → Sven
-    - ION OR "finanzierung" in title → Stephan
-    - SAP technology → Alexander
-    - Switzerland country → Tobias
-    - Everything else → Carsten
+    Rules (evaluated top-down — first match wins):
+    1. Germany AND (Kyriba OR Nomentia OR liquidity-management variants) → Sven
+    2. ION OR finanzierung OR debt-variants in title                     → Stephan
+    3. Germany AND cash-management variants in title                     → Stefan
+    4. SAP technology (any country)                                      → Alexander
+    5. Switzerland AND (FX-variants OR risk-management variants)         → Elia
+    6. Everything else in Switzerland OR Austria                         → Tobias
+    7. Everything else (Germany default + Unknown fallthrough)           → Carsten
+
+    Note: Kyriba, Nomentia and ION are matched in the JOB TITLE (not the
+    technologies column) — they're vendor names that often appear in titles
+    like "SAP / Kyriba Treasury Consultant" or "ION Treasury Specialist".
+    "ion" uses whole-word-ish guards because it's a frequent substring
+    (region, position, solution, application, …).
+
+    Each English keyword is matched alongside its likely German
+    equivalents — DACH job postings flip between English and German titles
+    even within the same listing, and we want one rule to catch both.
     """
     tech = str(row.get("technologies", "")).lower()
     title = str(row.get("title", "")).lower()
     country = str(row.get("Country", ""))
 
-    # Check Kyriba or Cash Management
-    if "kyriba" in tech or "cash management" in title:
+    is_germany = country == "Germany"
+    is_switzerland = country == "Switzerland"
+    is_austria = country == "Austria"
+
+    # ----- keyword bundles (English + German variants) ----------------------
+    # Liquidity management
+    has_liquidity_mgmt = any(k in title for k in (
+        "liquidity management",
+        "liquidity-management",
+        "liquiditätsmanagement",
+        "liquiditaetsmanagement",        # ASCII fallback (no umlaut)
+        "liquiditäts-management",
+        "liquiditätssteuerung",
+        "liquiditätsplanung",
+        "liquiditätscontrolling",
+    ))
+    # Debt / financing
+    has_debt = any(k in title for k in (
+        "debt",
+        "finanzierung",                  # already German
+        "fremdfinanzierung",
+        "schulden",
+        "schuldenmanagement",
+        "verbindlichkeiten",
+        "fremdkapital",
+        "kredit",
+        "darlehen",
+    ))
+    # Cash management
+    has_cash_mgmt = any(k in title for k in (
+        "cash management",
+        "cash-management",
+        "cashmanagement",
+        "zahlungsverkehr",
+        "kassenführung",
+        "kassenfuehrung",
+    ))
+    # FX / foreign exchange
+    has_fx = any(k in title for k in (
+        " fx ", " fx,", " fx/", "(fx)",  # whole-word-ish so 'fix' / 'fox' don't match
+        "foreign exchange",
+        "devisen",
+        "devisenhandel",
+        "devisenmanagement",
+        "währungsmanagement",
+        "waehrungsmanagement",
+    )) or title.startswith("fx ") or title.endswith(" fx")
+    # Risk management
+    has_risk_mgmt = any(k in title for k in (
+        "risk management",
+        "risk-management",
+        "risikomanagement",
+        "risiko management",
+        "risiko-management",
+        "risikosteuerung",
+        "risikocontrolling",
+    ))
+    # Vendor names in title (not in tech column).
+    # Kyriba and Nomentia are unique brand strings — direct substring is safe.
+    has_kyriba = "kyriba" in title
+    has_nomentia = "nomentia" in title
+    # "ion" is a dangerous substring (region, position, solution, …) so we
+    # require it to appear as a whole-ish word or in known ION phrasings.
+    has_ion = (
+        " ion " in title
+        or " ion," in title
+        or " ion/" in title
+        or " ion-" in title
+        or "(ion)" in title
+        or "ion treasury" in title
+        or "ion group" in title
+        or "ion wallstreet" in title
+        or "ion ws" in title
+        or title.startswith("ion ")
+        or title.endswith(" ion")
+    )
+
+    # ----- rule chain ------------------------------------------------------
+    # 1) Germany + Kyriba / Nomentia / liquidity management
+    if is_germany and (has_kyriba or has_nomentia or has_liquidity_mgmt):
         return "Sven"
 
-    # Check ION or Finanzierung
-    if "ion" in tech or "finanzierung" in title:
+    # 2) ION / finanzierung / debt (any country, per current spec)
+    if has_ion or has_debt:
         return "Stephan"
 
-    # Check SAP
+    # 3) Germany + cash management
+    if is_germany and has_cash_mgmt:
+        return "Stefan"
+
+    # 4) SAP technology (any country)
     if "sap" in tech:
         return "Alexander"
 
-    # Check Switzerland
-    if country == "Switzerland":
+    # 5) Switzerland + FX / risk management
+    if is_switzerland and (has_fx or has_risk_mgmt):
+        return "Elia"
+
+    # 6) Everything else in Switzerland OR Austria
+    if is_switzerland or is_austria:
         return "Tobias"
 
-    # Default
+    # 7) Everything else (Germany default + Unknown fallthrough)
     return "Carsten"
 # ---------------------------------------------------------------------------
 # CRM enrichment — mirrors sales_dashboard (2).py so values match the dashboard
